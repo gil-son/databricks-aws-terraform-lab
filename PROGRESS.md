@@ -28,7 +28,7 @@ Step-by-step plan for `databricks-aws-terraform-lab` (Project 1). Legend: `[x]` 
 - [x] Module outputs (`vpc_id`, `private_subnet_ids`, `security_group_id`, `nat_enabled`)
 - [x] Apply in homol with `enable_nat = false` and document (README 3.2)
 - [ ] Optional: VPC endpoints (S3 gateway, STS/Kinesis interface) behind a flag
-- [x] `enable_nat = true` applied for the workspace (NAT `nat-052076b3fa0e2d29f`). Currently ON: turn off at the end of each session with `terraform apply -var enable_nat=false`
+- [x] `enable_nat = true` applied for the workspace (NAT `nat-052076b3fa0e2d29f`). Turn off at the end of each session with `terraform apply -var enable_nat=false`. **Current state (end of session 2026-10-08): NAT OFF (`deleted`, verified with aws cli)**; turn it on again with `-var enable_nat=true` before running any cluster
 
 ## Phase 3 - IAM Databricks module
 - [x] Cross-account role + policy (Databricks data sources, `customer` policy type)
@@ -45,7 +45,7 @@ Step-by-step plan for `databricks-aws-terraform-lab` (Project 1). Legend: `[x]` 
 - [x] `databricks_mws_workspaces` (credentials + storage + network; region `us-east-1`)
 - [x] Expose outputs (`workspace_id`, `workspace_url`)
 - [x] Wire into `environments/homol` (`enable_nat` is now an env variable); plan reviewed (9 to add, 1 to change)
-- [x] `terraform apply -var enable_nat=true` done (9 added, 1 changed); NAT is ON (billing hourly)
+- [x] `terraform apply -var enable_nat=true` done (9 added, 1 changed); NAT was ON during the session and was turned off afterwards
 - [x] Workspace login confirmed (user assigned as Admin in account console); URL https://dbc-405a719f-a0d8.cloud.databricks.com (id 7474658903342069)
 - [x] Workspace-level auth: second `databricks` provider (alias `workspace`) with the same OAuth service principal
 - [x] Document in README (3.4)
@@ -57,14 +57,15 @@ Step-by-step plan for `databricks-aws-terraform-lab` (Project 1). Legend: `[x]` 
 - [ ] Explicit grants (read/write per schema, groups or service principals)
 - [x] Document in README (3.5)
 
-## Phase 6 - Cluster policies and validation
-- [ ] Cluster policies: job clusters by default, auto-termination 15-20 min, capped size/autoscaling
+## Phase 6 - Data bucket, cluster policies and validation (IN PROGRESS)
+- [ ] Cluster policies (module/location TBD): job clusters by default, auto-termination 15-20 min, capped size/autoscaling
 - [x] S3 data bucket `databricks-<env>-data-<account>` with `raw/creditcard/` and `export/gold/creditcard/` + UC role policy + external location written, plan 8 to add (branch `feature/data-bucket`)
-- [x] Data bucket applied; both external locations visible in Catalog Explorer (user is metastore admin)
-- [ ] Upload `creditcard.csv` to `raw/creditcard/`, test the external location connection
+- [x] Data bucket applied; both external locations visible in Catalog Explorer once the user became metastore admin / got visibility (objects are owned by the service principal, so other users see nothing until granted)
+- [ ] Upload `creditcard.csv` to `raw/creditcard/` (download from Kaggle `mlg-ulb/creditcardfraud` or Zenodo 7395559)
+- [ ] Click **Test connection** on `databricks-homol-data-location` (Catalog > External Data > External Locations)
 - [ ] Validation job: read `creditcard.csv` from `raw/`, write Delta `homol_catalog.bronze.creditcard_raw`, confirm in Unity Catalog
 - [x] Document data bucket in README (3.6)
-- [ ] Terraform grants for homol_catalog
+- [ ] Terraform grants (next up): user `gilson.inspire@gmail.com` on `homol_catalog`/schemas and on the external locations, via a `databricks_grants` block; email passed as a variable in git-ignored tfvars
 
 ## Phase 7 - Prod environment
 - [ ] Fill `infra/environments/prod/main.tf` (reuse modules, `environment = "prod"`, prod catalog)
@@ -109,5 +110,6 @@ Workflow files exist but are empty (structure sanity check only). Trial clock is
 ## Housekeeping
 - [x] Initial README with IAM setup, bootstrap, network, iam-databricks docs and troubleshooting
 - [ ] Add Terraform-state and tfvars entries to `.gitignore` check (verify `terraform.tfvars` and `.terraform/` ignored)
-- [ ] Push `feature/workspace` and open PR (contains workspace + unity-catalog modules)
+- [x] workspace + unity-catalog modules merged (PRs #1-#4 incl. diagrams)
+- [ ] Merge PR for `feature/data-bucket` (pushed; data bucket + external location + docs)
 - [ ] Keep this file and README updated after each module

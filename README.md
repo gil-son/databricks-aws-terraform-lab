@@ -759,7 +759,7 @@ Each environment (homol, prod) has its own state, VPC, workspace and catalog, in
 Notes:
 - `databricks_external_location.url` is returned with a trailing slash. Building the catalog `storage_root` from it produced `//catalog` and an "inconsistent final plan" error, so the module builds the path from the bucket name and uses `depends_on` on the external location.
 - The storage credential validated with the existing UC role trust policy (account ID as external ID), no change needed.
-- Grants are not managed yet.
+- Grants are not managed yet. Until they are, objects created by the service principal are only visible to that principal and to metastore admins: a human user sees an empty **External Locations** list in Catalog Explorer.
 
 Verify in the workspace under **Catalog**: `homol_catalog` with `bronze`, `silver` and `gold`.
 
