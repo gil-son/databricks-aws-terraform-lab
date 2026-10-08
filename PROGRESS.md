@@ -60,7 +60,8 @@ Step-by-step plan for `databricks-aws-terraform-lab` (Project 1). Legend: `[x]` 
 ## Phase 6 - Cluster policies and validation
 - [ ] Cluster policies: job clusters by default, auto-termination 15-20 min, capped size/autoscaling
 - [x] S3 data bucket `databricks-<env>-data-<account>` with `raw/creditcard/` and `export/gold/creditcard/` + UC role policy + external location written, plan 8 to add (branch `feature/data-bucket`)
-- [ ] Apply data bucket, upload `creditcard.csv` to `raw/creditcard/`, test the external location connection
+- [x] Data bucket applied; both external locations visible in Catalog Explorer (user is metastore admin)
+- [ ] Upload `creditcard.csv` to `raw/creditcard/`, test the external location connection
 - [ ] Validation job: read `creditcard.csv` from `raw/`, write Delta `homol_catalog.bronze.creditcard_raw`, confirm in Unity Catalog
 - [x] Document data bucket in README (3.6)
 - [ ] Terraform grants for homol_catalog
