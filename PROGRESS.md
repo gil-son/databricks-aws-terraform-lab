@@ -53,8 +53,8 @@ Step-by-step plan for `databricks-aws-terraform-lab` (Project 1). Legend: `[x]` 
 ## Phase 5 - Unity Catalog module (`infra/modules/unity-catalog`)
 - [x] Metastore: not created by us; Databricks auto-created and attached `metastore_aws_us_east_1` to the workspace
 - [x] Storage credential + external location written (planned only)
-- [ ] Apply and confirm credential validation (UC role trust external ID may need updating)
-- [x] Catalog `homol_catalog` + schemas `bronze`, `silver`, `gold` written (plan: 6 to add); `prod_catalog` pending decision (same workspace vs prod env)
+- [x] Applied: storage credential validated OK with the existing UC role trust (no change needed)
+- [x] Catalog `homol_catalog` + schemas `bronze`, `silver`, `gold` written - applied in homol; `prod_catalog` will be created by the prod environment (own workspace, own state)
 - [ ] Explicit grants (read/write per schema, groups or service principals)
 - [ ] Document in README (3.5)
 
@@ -67,7 +67,7 @@ Step-by-step plan for `databricks-aws-terraform-lab` (Project 1). Legend: `[x]` 
 ## Phase 7 - Prod environment
 - [ ] Fill `infra/environments/prod/main.tf` (reuse modules, `environment = "prod"`, prod catalog)
 - [ ] Per-environment tfvars; parameterize hardcoded `"homol"` and AWS profile
-- [ ] Decide: separate workspace for prod vs only a separate catalog (brief assumes one catalog per env)
+- [x] Decision: prod gets its own workspace, VPC/NAT and `prod_catalog` (same account, separate state); shared metastore. Apply prod only when CI/CD is ready (duplicates NAT cost)
 
 ## Phase 8 - CI/CD (GitHub Actions) - required; scaffolded only
 

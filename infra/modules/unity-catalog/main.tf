@@ -30,8 +30,11 @@ resource "databricks_catalog" "this" {
   for_each = toset(var.catalogs)
 
   name         = each.key
-  storage_root = "${databricks_external_location.this.url}/${each.key}"
+  storage_root = "s3://${var.uc_bucket_name}/${each.key}"
   comment      = "Managed by Terraform"
+
+  # The path must be covered by the external location, which must exist first
+  depends_on = [databricks_external_location.this]
 }
 
 resource "databricks_schema" "this" {

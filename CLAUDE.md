@@ -28,8 +28,8 @@ infra/
   modules/
     network/            VPC, private subnets, SG; var enable_nat (DONE)
     iam-databricks/     cross-account role, root bucket, UC bucket/role, mws_credentials (DONE)
-    workspace/          mws_storage_configurations, mws_networks, mws_workspaces (written + planned, NOT yet applied)
-    unity-catalog/      metastore, catalogs, schemas, grants (TODO, not created)
+    workspace/          mws_storage_configurations, mws_networks, mws_workspaces (applied in homol: workspace_id 7474658903342069, https://dbc-405a719f-a0d8.cloud.databricks.com)
+    unity-catalog/      storage credential, external location, catalogs, schemas (applied in homol; grants TODO). Metastore is auto-created/attached by Databricks (metastore_aws_us_east_1), not managed here
   environments/
     homol/              main.tf, variables.tf, backend.tf (in use)
     prod/               backend.tf, main.tf EMPTY files
@@ -81,3 +81,9 @@ NAT Gateway ~US$0.045/h, public IPv4 US$0.005/h, interface endpoints US$0.01/end
 - User writes in Portuguese; repo docs, code, commits and these files are in English.
 - Commits follow conventional style (`feat(network): ...`, `docs: ...`); branch per feature (current: `feature/iam-databricks`, main branch `main`).
 - Document every completed module in `README.md` (section numbering 3.x) and tick it in `PROGRESS.md`.
+
+## Decisions log
+
+- Environments are simulated in one AWS account: each env (homol, prod) has its own state, VPC, workspace and catalog (`<env>_catalog`), sharing the account metastore. Prod applied only once CI/CD is ready.
+- Gotcha: `databricks_external_location.url` is returned with a trailing slash; build catalog `storage_root` from the bucket name instead.
+- Humans must be assigned to the workspace in the account console (Workspaces > Permissions) to log in; the service principal creator is not enough.
