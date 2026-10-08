@@ -25,6 +25,16 @@ resource "databricks_external_location" "this" {
   comment         = "Managed by Terraform"
 }
 
+# Lets Unity Catalog govern reads of raw/ and writes of export/ in the data bucket
+resource "databricks_external_location" "data" {
+  provider = databricks.workspace
+
+  name            = "databricks-${var.environment}-data-location"
+  url             = "s3://${var.data_bucket_name}"
+  credential_name = databricks_storage_credential.this.id
+  comment         = "Managed by Terraform"
+}
+
 resource "databricks_catalog" "this" {
   provider = databricks.workspace
   for_each = toset(var.catalogs)

@@ -23,3 +23,8 @@ variable "schemas" {
   type        = list(string)
   default     = ["bronze", "silver", "gold"]
 }
+
+variable "data_bucket_name" {
+  description = "S3 data bucket (raw input and Parquet export), from the iam-databricks module"
+  type        = string
+}

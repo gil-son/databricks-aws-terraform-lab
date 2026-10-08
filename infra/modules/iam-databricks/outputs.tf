@@ -17,3 +17,10 @@ output "unity_catalog_bucket_name" {
 output "unity_catalog_role_arn" {
   value = aws_iam_role.unity_catalog.arn
 }
+
+output "data_bucket_name" {
+  value = aws_s3_bucket.data.bucket
+
+  # Consumers (external location) must wait until the UC role can access the bucket
+  depends_on = [aws_iam_role_policy_attachment.unity_catalog_data]
+}

@@ -64,8 +64,9 @@ module "unity_catalog" {
     databricks.workspace = databricks.workspace
   }
 
-  environment    = "homol"
-  uc_bucket_name = module.iam_databricks.unity_catalog_bucket_name
-  uc_role_arn    = module.iam_databricks.unity_catalog_role_arn
-  catalogs       = ["homol_catalog"]
+  environment      = "homol"
+  uc_bucket_name   = module.iam_databricks.unity_catalog_bucket_name
+  uc_role_arn      = module.iam_databricks.unity_catalog_role_arn
+  data_bucket_name = module.iam_databricks.data_bucket_name
+  catalogs         = ["homol_catalog"]
 }
