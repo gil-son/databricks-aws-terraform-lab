@@ -46,17 +46,16 @@ Step-by-step plan for `databricks-aws-terraform-lab` (Project 1). Legend: `[x]` 
 - [x] Expose outputs (`workspace_id`, `workspace_url`)
 - [x] Wire into `environments/homol` (`enable_nat` now an env variable), `terraform validate` OK, plan with `enable_nat=true`: 9 to add, 1 to change, 0 to destroy (branch `feature/workspace`)
 - [x] `terraform apply -var enable_nat=true` done (9 added, 1 changed); NAT is ON (billing hourly)
-- [ ] Confirm workspace login in the browser and note the URL
-- [ ] Workspace-level auth strategy for the unity-catalog module
+- [x] Workspace login confirmed (user assigned as Admin in account console); URL https://dbc-405a719f-a0d8.cloud.databricks.com (id 7474658903342069)
+- [x] Workspace-level auth: second `databricks` provider (alias `workspace`) with the same OAuth service principal
 - [ ] Document in README (3.4)
 
 ## Phase 5 - Unity Catalog module (`infra/modules/unity-catalog`)
-- [ ] Metastore (one per account/region) and assignment to the workspace
-- [ ] Storage credential (UC role) and external location; confirm self-assume trust works
-- [ ] Catalogs `homol_catalog` and `prod_catalog`
-- [ ] Schemas `bronze`, `silver`, `gold` per catalog
+- [x] Metastore: not created by us; Databricks auto-created and attached `metastore_aws_us_east_1` to the workspace
+- [x] Storage credential + external location written (planned only)
+- [ ] Apply and confirm credential validation (UC role trust external ID may need updating)
+- [x] Catalog `homol_catalog` + schemas `bronze`, `silver`, `gold` written (plan: 6 to add); `prod_catalog` pending decision (same workspace vs prod env)
 - [ ] Explicit grants (read/write per schema, groups or service principals)
-- [ ] Workspace-level `databricks` provider alias in the environment
 - [ ] Document in README (3.5)
 
 ## Phase 6 - Cluster policies and validation
