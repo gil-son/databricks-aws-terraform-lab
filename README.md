@@ -882,6 +882,8 @@ flowchart LR
     class JOB,BR,SM planned
 ```
 
+If the external location fails with `AWS IAM role does not have READ permissions`, the policy had not been attached to the UC role yet when Unity Catalog tested access (IAM changes take a few seconds to propagate). The module output `data_bucket_name` now waits for the policy attachment; if it still happens, wait about 20 seconds and re-run `terraform apply`.
+
 Upload the dataset (from Kaggle `mlg-ulb/creditcardfraud` or Zenodo record 7395559) after the apply:
 
 ```bash
