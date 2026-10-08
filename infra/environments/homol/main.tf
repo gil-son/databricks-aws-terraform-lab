@@ -6,6 +6,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    databricks = {
+      source  = "databricks/databricks"
+      version = "~> 1.0"
+    }
   }
 }
 
@@ -18,4 +22,17 @@ module "network" {
   source      = "../../modules/network"
   environment = "homol"
   enable_nat  = false
+}
+
+provider "databricks" {
+  host          = "https://accounts.cloud.databricks.com"
+  account_id    = var.databricks_account_id
+  client_id     = var.databricks_client_id
+  client_secret = var.databricks_client_secret
+}
+
+module "iam_databricks" {
+  source      = "../../modules/iam-databricks"
+  environment = "homol"
+  account_id  = var.databricks_account_id
 }

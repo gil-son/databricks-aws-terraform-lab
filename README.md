@@ -325,6 +325,192 @@ output "security_group_id" { value = aws_security_group.databricks.id }
 output "nat_enabled" { value = var.enable_nat }
 ```
 
+### 3.3 IAM Databricks module (`infra/modules/iam-databricks`)
+
+Creates, in the AWS account, everything the Databricks account needs to deploy a workspace and Unity Catalog, and registers the cross-account role with Databricks. Like the network module, it is not run on its own: it is called from `infra/environments/<env>/main.tf` and shares that environment's state.
+
+#### 3.3.1 Databricks account setup (manual, once)
+
+Terraform authenticates against the **account console** (`https://accounts.cloud.databricks.com`) with a service principal using OAuth (machine-to-machine):
+
+1. In the account console, create a service principal named `terraform-deployer` (User management → Service principals).
+2. On the service principal, grant the **Account admin** role (Roles tab). This is required: the credentials/networks/workspaces APIs are disabled for non-admins (error: `This API is disabled for users without account admin status`).
+3. Generate an OAuth secret (Secrets tab). Save the **Client ID** and the **Client Secret** — the secret is shown only once.
+
+#### 3.3.2 Terraform variables and credentials
+
+The three values are declared in `infra/environments/<env>/variables.tf`, and the secret is marked `sensitive`:
+
+```hcl
+variable "databricks_account_id" {
+  description = "Databricks Account ID"
+  type        = string
+}
+
+variable "databricks_client_id" {
+  description = "Databricks service principal client ID"
+  type        = string
+}
+
+variable "databricks_client_secret" {
+  description = "Databricks service principal client secret"
+  type        = string
+  sensitive   = true
+}
+```
+
+And set in `infra/environments/<env>/terraform.tfvars`, which is **git-ignored and must never be committed**:
+
+```hcl
+databricks_account_id    = "<account-id>"
+databricks_client_id     = "<client-id>"
+databricks_client_secret = "<client-secret>"
+```
+
+The provider receives them in `main.tf`:
+
+```hcl
+provider "databricks" {
+  host          = "https://accounts.cloud.databricks.com"
+  account_id    = var.databricks_account_id
+  client_id     = var.databricks_client_id
+  client_secret = var.databricks_client_secret
+}
+
+module "iam_databricks" {
+  source      = "../../modules/iam-databricks"
+  environment = "homol"
+  account_id  = var.databricks_account_id
+}
+```
+
+In CI, the same variables can be provided as `TF_VAR_databricks_account_id`, `TF_VAR_databricks_client_id` and `TF_VAR_databricks_client_secret`, sourced from GitHub repository secrets.
+
+The module has its own `versions.tf` declaring `databricks/databricks` as the provider source. Without it, the module looks for `hashicorp/databricks`, which does not exist, and `terraform init` fails.
+
+#### 3.3.3 AWS policy for the deployer role
+
+Creating roles, policies, and buckets requires extra permissions on `terraform-deployer-role`. These are **not** provided by Databricks: Databricks supplies the *contents* of the roles and policies (via Terraform data sources), but the identity running Terraform still needs permission to create them in the AWS account.
+
+**Policy:** `terraform-iam-databricks-policy`
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "TerraformIamRolesDatabricks",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole",
+        "iam:DeleteRole",
+        "iam:GetRole",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:TagRole",
+        "iam:UntagRole",
+        "iam:ListRoleTags",
+        "iam:ListRolePolicies",
+        "iam:ListAttachedRolePolicies",
+        "iam:ListInstanceProfilesForRole",
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy"
+      ],
+      "Resource": "arn:aws:iam::{your-account-number}:role/databricks-*"
+    },
+    {
+      "Sid": "TerraformIamPoliciesDatabricks",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreatePolicy",
+        "iam:DeletePolicy",
+        "iam:GetPolicy",
+        "iam:GetPolicyVersion",
+        "iam:ListPolicyVersions",
+        "iam:CreatePolicyVersion",
+        "iam:DeletePolicyVersion",
+        "iam:TagPolicy",
+        "iam:UntagPolicy",
+        "iam:ListPolicyTags"
+      ],
+      "Resource": "arn:aws:iam::{your-account-number}:policy/databricks-*"
+    },
+    {
+      "Sid": "TerraformS3DatabricksBuckets",
+      "Effect": "Allow",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::databricks-*",
+        "arn:aws:s3:::databricks-*/*"
+      ]
+    }
+  ]
+}
+```
+
+Create it in IAM → Policies → Create policy → JSON, with an identity that can administer IAM (not `terraform-cli-user`), then attach it to `terraform-deployer-role`. Access is scoped by name: only roles, policies, and buckets prefixed with `databricks-`, so the state bucket (`terraform-state-*`) is not reachable through this policy. `s3:*` is deliberately broad within that prefix to avoid missing `Get*` actions, and can be tightened later.
+
+#### 3.3.4 Resources created
+
+| Resource | Purpose |
+|---|---|
+| `databricks-<env>-crossaccount-role` + policy | Role the Databricks control plane assumes to launch clusters in this AWS account. Trust policy and permissions come from the `databricks_aws_assume_role_policy` and `databricks_aws_crossaccount_policy` data sources (`customer` policy type, for a customer-managed VPC) |
+| `databricks-<env>-root-<account-id>` | Workspace root bucket: public access blocked, SSE-S3 encryption, bucket policy from `databricks_aws_bucket_policy` |
+| `databricks-<env>-uc-<account-id>` | Unity Catalog bucket: public access blocked, SSE-S3 encryption |
+| `databricks-<env>-uc-role` + policy | Role Unity Catalog assumes to access its bucket. Access policy from `databricks_aws_unity_catalog_policy`. The trust policy trusts the Unity Catalog master role and the role itself (self-assuming, required by Databricks) |
+| `databricks_mws_credentials` | Registers the cross-account role with the Databricks account; outputs `credentials_id` |
+
+The module exposes `credentials_id`, `cross_account_role_arn`, `root_bucket_name`, `unity_catalog_bucket_name` and `unity_catalog_role_arn`, to be consumed by the `workspace` and `unity-catalog` modules.
+
+#### 3.3.5 Apply
+
+```bash
+cd infra/environments/homol
+terraform init     # required after adding the module and the databricks provider
+terraform validate
+terraform plan
+terraform apply
+```
+
+#### 3.3.6 Verify
+
+Terraform state:
+
+```bash
+terraform state list | grep iam_databricks
+```
+
+AWS (replace `<databricks-account-id>` with the Databricks account UUID):
+
+```bash
+aws iam get-role --role-name databricks-homol-crossaccount-role \
+  --query 'Role.AssumeRolePolicyDocument' --profile terraform-deployer
+
+aws iam get-role --role-name databricks-homol-uc-role \
+  --query 'Role.AssumeRolePolicyDocument' --profile terraform-deployer
+
+aws s3api head-bucket \
+  --bucket databricks-homol-root-<databricks-account-id> --profile terraform-deployer
+
+aws s3api head-bucket \
+  --bucket databricks-homol-uc-<databricks-account-id> --profile terraform-deployer
+
+aws s3api get-public-access-block \
+  --bucket databricks-homol-root-<databricks-account-id> --profile terraform-deployer
+```
+
+`head-bucket` returns an error if the bucket does not exist or is not accessible; on success it prints the bucket ARN and region (older AWS CLI versions print nothing). `aws s3api list-buckets` is intentionally not used: it requires `s3:ListAllMyBuckets`, which cannot be scoped to `databricks-*` and is not granted by `terraform-iam-databricks-policy`. If the AWS CLI opens a pager (`(END)`), run `export AWS_PAGER=""`.
+
+Databricks: in the account console, the credential configuration `databricks-homol-crossaccount-creds` should be listed under Cloud resources.
+
+The Unity Catalog role's self-assume trust is only exercised when a storage credential is created (`unity-catalog` module), so a failure there points back to this role's trust policy.
+
+#### 3.3.7 Common errors
+
+- **`cannot configure default credentials`:** the provider could not authenticate. Check that `databricks_client_id` holds the service principal UUID and `databricks_client_secret` holds the secret (not swapped), and that no stale `DATABRICKS_*` environment variables override them.
+- **`This API is disabled for users without account admin status`:** authentication worked, but the service principal lacks the **Account admin** role (see 3.3.1).
+- **`Failed credentials validation checks` on `databricks_mws_credentials`:** IAM propagation delay right after creating the role and policy. Wait about 20 seconds and re-run `terraform apply`.
+- **403 on `iam:*` or `s3:*` during apply:** `terraform-iam-databricks-policy` is missing or not attached to `terraform-deployer-role`.
+
 ## Troubleshooting notes
 
 - **Resource marked as `tainted`:** happens when a create/update call is partially accepted by AWS but Terraform can't confirm the final state (often a missing `Get*` IAM permission right after a `Put*`/`Create*` call). Fix the underlying permission, confirm the resource is correct outside Terraform (console or `aws s3api ...` / `aws ec2 describe-...`), then run `terraform untaint <resource>` — never force a destroy/recreate on a resource you haven't verified.
