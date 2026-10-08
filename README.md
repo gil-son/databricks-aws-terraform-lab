@@ -19,6 +19,171 @@ infra/
   workflows/
 ```
 
+## Architecture diagrams
+
+Legend: solid = applied in `homol`; dashed grey = planned. Labels like `module.network` show which Terraform module owns each piece.
+
+### Macro view: AWS, Databricks account and CI/CD
+
+```mermaid
+flowchart LR
+    DEV["Developer machine<br/>profile terraform-cli-user"]
+
+    subgraph GH["GitHub (planned)"]
+        GHA["GitHub Actions<br/>plan on PR / apply homol / apply prod"]
+        GHENV["GitHub Environments<br/>homol, prod with approval"]
+        OIDCROLE["IAM role github-actions-terraform<br/>OIDC, no static keys"]
+    end
+
+    subgraph AWS["AWS account - us-east-1"]
+        DEPLOYER["IAM role terraform-deployer-role<br/>assumed by terraform-cli-user"]
+        STATE[("S3 bucket terraform-state-gilson-databricks-lab<br/>homol/terraform.tfstate<br/>module infra/bootstrap")]
+
+        subgraph VPC["VPC databricks-homol-vpc 10.0.0.0/16 - module.network"]
+            IGW["Internet Gateway<br/>databricks-homol-igw"]
+
+            subgraph PUB["Public subnet 10.0.0.0/24 - exists only with enable_nat=true"]
+                NAT["NAT Gateway<br/>databricks-homol-nat"]
+                EIP["Elastic IP<br/>databricks-homol-nat-eip"]
+            end
+
+            subgraph PRIV["Private subnets"]
+                subgraph AZA["us-east-1a - 10.0.1.0/24"]
+                    EC2A["EC2 instances<br/>Databricks driver and workers"]
+                end
+                subgraph AZB["us-east-1b - 10.0.2.0/24"]
+                    EC2B["EC2 instances<br/>Databricks workers"]
+                end
+                SG["Security group databricks-homol-sg<br/>self all traffic, 443, 3306, 8443-8451"]
+            end
+
+            RTPUB["Route table public<br/>0.0.0.0/0 to IGW"]
+            RTPRIV["Route table private<br/>0.0.0.0/0 to NAT"]
+        end
+
+        subgraph IAMDBX["module.iam-databricks"]
+            CROSSROLE["IAM role databricks-homol-crossaccount-role<br/>+ policy"]
+            UCROLE["IAM role databricks-homol-uc-role<br/>+ policy, self-assuming"]
+        end
+
+        ROOTB[("S3 databricks-homol-root-account-id<br/>workspace root bucket")]
+        UCB[("S3 databricks-homol-uc-account-id<br/>Unity Catalog bucket")]
+        DATAB[("S3 data bucket - planned<br/>raw/creditcard/<br/>export/gold/creditcard/")]
+    end
+
+    subgraph DBXACC["Databricks account - control plane (accounts.cloud.databricks.com)"]
+        SP["Service principal terraform-deployer<br/>Account admin, OAuth M2M"]
+        CRED["mws_credentials<br/>databricks-homol-crossaccount-creds"]
+        STG["mws_storage_configurations<br/>databricks-homol-storage"]
+        NETC["mws_networks<br/>databricks-homol-network"]
+        WS["mws_workspaces<br/>databricks-homol<br/>module.workspace"]
+        META["Unity Catalog metastore<br/>metastore_aws_us_east_1<br/>auto-created by Databricks"]
+    end
+
+    SM["Project 2 - SageMaker<br/>training + endpoint - planned"]
+
+    DEV -->|assume role| DEPLOYER
+    DEPLOYER -->|terraform apply| VPC
+    DEPLOYER -->|terraform apply| IAMDBX
+    DEV -.->|state read/write| STATE
+    DEV -->|OAuth| SP
+    SP -->|creates| CRED
+    SP -->|creates| STG
+    SP -->|creates| NETC
+    SP -->|creates| WS
+
+    CRED --> CROSSROLE
+    STG --> ROOTB
+    NETC --> VPC
+    NETC --> SG
+    WS --> CRED
+    WS --> STG
+    WS --> NETC
+    WS --- META
+
+    CROSSROLE -.->|assumed by Databricks control plane to launch| EC2A
+    CROSSROLE -.-> EC2B
+    EC2A --> SG
+    EC2B --> SG
+    EC2A -->|egress| RTPRIV
+    EC2B -->|egress| RTPRIV
+    RTPRIV --> NAT
+    NAT --> EIP
+    NAT --> RTPUB
+    RTPUB --> IGW
+    IGW -->|internet and control plane| DBXACC
+
+    EC2A -->|reads/writes| ROOTB
+    UCROLE -->|access policy| UCB
+    META -->|managed storage via UC role| UCROLE
+
+    GHA --> GHENV
+    GHA -->|OIDC| OIDCROLE
+    OIDCROLE -.->|plan/apply| VPC
+    EC2A -.->|export gold Parquet| DATAB
+    DATAB -.-> SM
+
+    classDef planned stroke-dasharray: 5 5,fill:#f2f2f2,stroke:#888,color:#555
+    class GH,GHA,GHENV,OIDCROLE,DATAB,SM planned
+```
+
+### Micro view: inside the Databricks workspace (Unity Catalog)
+
+```mermaid
+flowchart TB
+    subgraph WSG["Workspace databricks-homol<br/>https://dbc-405a719f-a0d8.cloud.databricks.com"]
+        subgraph UC["Unity Catalog - module.unity-catalog (provider alias workspace)"]
+            META2["Metastore<br/>metastore_aws_us_east_1"]
+            SC["Storage credential<br/>databricks-homol-uc-credential<br/>role databricks-homol-uc-role"]
+            EL["External location<br/>databricks-homol-uc-location<br/>s3://databricks-homol-uc-account-id"]
+            CAT["Catalog homol_catalog<br/>storage root s3://.../homol_catalog"]
+
+            subgraph SCH["Schemas"]
+                BRONZE["bronze<br/>creditcard_raw - planned"]
+                SILVER["silver<br/>creditcard_clean - planned"]
+                GOLD["gold<br/>creditcard_features - planned"]
+            end
+
+            GRANTS["Grants per schema<br/>planned"]
+        end
+
+        subgraph COMPUTE["Compute and jobs"]
+            POL["Cluster policies<br/>job clusters, auto-termination, size cap - planned"]
+            JOB["Validation job<br/>CSV to Delta bronze - planned"]
+            WF["Databricks Workflow + MLflow<br/>Project 2 - planned"]
+        end
+    end
+
+    UCB2[("S3 databricks-homol-uc-account-id")]
+    RAW[("S3 data bucket - planned<br/>raw/creditcard/creditcard.csv")]
+    EXPORT[("S3 data bucket - planned<br/>export/gold/creditcard/ Parquet")]
+    SM2["SageMaker training + serverless endpoint<br/>Project 2 - planned"]
+
+    PROD["prod environment - planned<br/>own VPC, workspace and prod_catalog<br/>shares the account metastore"]
+
+    META2 --> CAT
+    SC --> EL
+    EL --> UCB2
+    EL --> CAT
+    CAT --> BRONZE
+    CAT --> SILVER
+    CAT --> GOLD
+    BRONZE -->|Spark transform| SILVER
+    SILVER -->|feature engineering| GOLD
+    GRANTS -.-> SCH
+
+    POL -.-> JOB
+    RAW -.->|read| JOB
+    JOB -.->|write Delta| BRONZE
+    GOLD -.->|export Parquet| EXPORT
+    EXPORT -.-> SM2
+    WF -.-> SCH
+    META2 -.-> PROD
+
+    classDef planned stroke-dasharray: 5 5,fill:#f2f2f2,stroke:#888,color:#555
+    class BRONZE,SILVER,GOLD,GRANTS,POL,JOB,WF,RAW,EXPORT,SM2,PROD planned
+```
+
 ## 1. AWS IAM setup
 
 This project uses a two-identity pattern: a low-privilege IAM user that can only assume a role, and a role that holds the actual permissions. The user never has direct access to AWS resources.
