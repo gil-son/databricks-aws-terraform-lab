@@ -10,6 +10,7 @@ Step-by-step plan for `databricks-aws-terraform-lab` (Project 1). Legend: `[x]` 
 - [x] Configure AWS CLI profiles (`terraform-cli-user`, `terraform-deployer`) and test both identities
 - [x] Create `terraform-iam-databricks-policy` and attach to the role
 - [x] Create Databricks service principal `terraform-deployer` with Account admin and OAuth secret
+- [ ] Add `ec2:AssociateAddress` and `ec2:DisassociateAddress` to `terraform-network-policy` (by hand, IAM admin) and re-run `apply -var enable_nat=false` to release the Elastic IP
 - [ ] Configure AWS Budgets alert on the AWS account
 - [x] Databricks 14-day trial activated early (platform requirements changed); pre-trial gate no longer blocking
 - [x] Trial status: 13 days remaining as of 2026-10-08 (expires about 2026-10-21)
@@ -28,7 +29,7 @@ Step-by-step plan for `databricks-aws-terraform-lab` (Project 1). Legend: `[x]` 
 - [x] Module outputs (`vpc_id`, `private_subnet_ids`, `security_group_id`, `nat_enabled`)
 - [x] Apply in homol with `enable_nat = false` and document (README 3.2)
 - [ ] Optional: VPC endpoints (S3 gateway, STS/Kinesis interface) behind a flag
-- [x] `enable_nat = true` applied for the workspace (NAT `nat-052076b3fa0e2d29f`). Turn off at the end of each session with `terraform apply -var enable_nat=false`. **Current state (end of session 2026-10-08): NAT OFF (`deleted`, verified with aws cli)**; turn it on again with `-var enable_nat=true` before running any cluster
+- [x] `enable_nat = true` applied for the workspace (NAT `nat-052076b3fa0e2d29f`). Turn off at the end of each session with `terraform apply -var enable_nat=false`. **Current state (end of session 2026-10-08): NAT gateway deleted, but `apply -var enable_nat=false` failed on `ec2:DisassociateAddress`; Elastic IP may still exist until the policy is fixed and the apply re-run**; turn it on again with `-var enable_nat=true` before running any cluster
 
 ## Phase 3 - IAM Databricks module
 - [x] Cross-account role + policy (Databricks data sources, `customer` policy type)

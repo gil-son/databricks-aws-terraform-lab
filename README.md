@@ -270,6 +270,8 @@ No console access, no permissions attached directly — this user only gets the 
         "ec2:DescribeInternetGateways",
         "ec2:AllocateAddress",
         "ec2:ReleaseAddress",
+        "ec2:AssociateAddress",
+        "ec2:DisassociateAddress",
         "ec2:DescribeAddresses",
         "ec2:DescribeAddressesAttribute",
         "ec2:CreateNatGateway",
@@ -900,5 +902,6 @@ Verify:
 
 - **Resource marked as `tainted`:** happens when a create/update call is partially accepted by AWS but Terraform can't confirm the final state (often a missing `Get*` IAM permission right after a `Put*`/`Create*` call). Fix the underlying permission, confirm the resource is correct outside Terraform (console or `aws s3api ...` / `aws ec2 describe-...`), then run `terraform untaint <resource>` — never force a destroy/recreate on a resource you haven't verified.
 - Managed policy searches in the IAM console (e.g. searching `sts:AssumeRole` or `CreateBucket`) only match **predefined policy names**, not individual actions. Use **Create inline policy → JSON**, or create a standalone managed policy via JSON, to grant a specific action.
+- **`UnauthorizedOperation` on `ec2:DisassociateAddress` when turning the NAT off:** the network policy was missing `ec2:AssociateAddress` and `ec2:DisassociateAddress`. Add them to `terraform-network-policy` (section 1.3) and re-run `terraform apply -var enable_nat=false`; the NAT, IGW and public subnet are already gone at that point, only the Elastic IP remains (and still bills until released).
 - **Security group rule descriptions** only accept `a-zA-Z0-9. _-:/()#,@[]+=&;{}!$*` — accented characters are rejected by the AWS API. Keep all `description` fields in plain ASCII.
 - **`aws_security_group.description` and `.name` are immutable** — changing either forces resource replacement, which requires `ec2:DescribeNetworkInterfaces` and `ec2:DeleteNetworkInterface` permissions to tear down any attached ENIs. For zero-downtime renames in the future, use `name_prefix` with `lifecycle { create_before_destroy = true }` — not necessary for this lab.
