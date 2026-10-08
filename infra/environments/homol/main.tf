@@ -21,7 +21,7 @@ provider "aws" {
 module "network" {
   source      = "../../modules/network"
   environment = "homol"
-  enable_nat  = false
+  enable_nat  = var.enable_nat
 }
 
 provider "databricks" {
@@ -35,4 +35,37 @@ module "iam_databricks" {
   source      = "../../modules/iam-databricks"
   environment = "homol"
   account_id  = var.databricks_account_id
+}
+
+module "workspace" {
+  source = "../../modules/workspace"
+
+  environment        = "homol"
+  account_id         = var.databricks_account_id
+  credentials_id     = module.iam_databricks.credentials_id
+  root_bucket_name   = module.iam_databricks.root_bucket_name
+  vpc_id             = module.network.vpc_id
+  private_subnet_ids = module.network.private_subnet_ids
+  security_group_id  = module.network.security_group_id
+}
+
+# Workspace-level provider: Unity Catalog objects are managed through the workspace API
+provider "databricks" {
+  alias         = "workspace"
+  host          = module.workspace.workspace_url
+  client_id     = var.databricks_client_id
+  client_secret = var.databricks_client_secret
+}
+
+module "unity_catalog" {
+  source = "../../modules/unity-catalog"
+
+  providers = {
+    databricks.workspace = databricks.workspace
+  }
+
+  environment    = "homol"
+  uc_bucket_name = module.iam_databricks.unity_catalog_bucket_name
+  uc_role_arn    = module.iam_databricks.unity_catalog_role_arn
+  catalogs       = ["homol_catalog"]
 }
