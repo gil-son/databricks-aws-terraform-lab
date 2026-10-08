@@ -12,13 +12,13 @@ Step-by-step plan for `databricks-aws-terraform-lab` (Project 1). Legend: `[x]` 
 - [x] Create Databricks service principal `terraform-deployer` with Account admin and OAuth secret
 - [ ] Configure AWS Budgets alert on the AWS account
 - [x] Databricks 14-day trial activated early (platform requirements changed); pre-trial gate no longer blocking
-- [ ] Record trial start date and expiry date here (ask user) and track days remaining
+- [x] Trial status: 13 days remaining as of 2026-10-08 (expires about 2026-10-21)
 
 ## Phase 1 - Bootstrap (remote state)
 - [x] Write `infra/bootstrap` (S3 bucket, versioning, public access block, encryption)
 - [x] Apply bootstrap once with local state; outputs `bucket_name` / `bucket_arn`
 - [x] Configure remote backend in `infra/environments/homol/backend.tf`
-- [ ] Decide on state locking (S3 native lockfile vs DynamoDB table) and apply it
+- [x] State locking: S3 native lockfile (`use_lockfile = true`), no DynamoDB
 - [ ] Configure `infra/environments/prod/backend.tf` (currently empty), key `prod/terraform.tfstate`
 
 ## Phase 2 - Network module
@@ -37,14 +37,17 @@ Step-by-step plan for `databricks-aws-terraform-lab` (Project 1). Legend: `[x]` 
 - [x] `databricks_mws_credentials` and module outputs
 - [x] Wire provider and module into `environments/homol/main.tf`; credentials via git-ignored tfvars
 - [x] Document setup, verification and common errors (README 3.3)
-- [ ] Confirm `terraform apply` output and verification commands passed in homol, then merge `feature/iam-databricks` into `main`
+- [x] Verified in homol; `feature/iam-databricks` merged into `main` (PR #1)
 
 ## Phase 4 - Workspace module (`infra/modules/workspace`)
-- [ ] `databricks_mws_storage_configurations` (root bucket)
-- [ ] `databricks_mws_networks` (VPC, subnets, security group from the network module)
-- [ ] `databricks_mws_workspaces` (credentials + storage + network; region `us-east-1`)
-- [ ] Expose outputs (`workspace_id`, `workspace_url`, token/auth strategy for the workspace-level provider)
-- [ ] Wire into `environments/homol`, `terraform validate` / `plan` review
+- [x] `databricks_mws_storage_configurations` (root bucket)
+- [x] `databricks_mws_networks` (VPC, subnets, security group from the network module)
+- [x] `databricks_mws_workspaces` (credentials + storage + network; region `us-east-1`)
+- [x] Expose outputs (`workspace_id`, `workspace_url`)
+- [x] Wire into `environments/homol` (`enable_nat` now an env variable), `terraform validate` OK, plan with `enable_nat=true`: 9 to add, 1 to change, 0 to destroy (branch `feature/workspace`)
+- [x] `terraform apply -var enable_nat=true` done (9 added, 1 changed); NAT is ON (billing hourly)
+- [ ] Confirm workspace login in the browser and note the URL
+- [ ] Workspace-level auth strategy for the unity-catalog module
 - [ ] Document in README (3.4)
 
 ## Phase 5 - Unity Catalog module (`infra/modules/unity-catalog`)

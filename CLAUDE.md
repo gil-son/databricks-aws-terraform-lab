@@ -28,7 +28,7 @@ infra/
   modules/
     network/            VPC, private subnets, SG; var enable_nat (DONE)
     iam-databricks/     cross-account role, root bucket, UC bucket/role, mws_credentials (DONE)
-    workspace/          mws_storage_configurations, mws_networks, mws_workspaces (TODO, not created)
+    workspace/          mws_storage_configurations, mws_networks, mws_workspaces (written + planned, NOT yet applied)
     unity-catalog/      metastore, catalogs, schemas, grants (TODO, not created)
   environments/
     homol/              main.tf, variables.tf, backend.tf (in use)
@@ -48,7 +48,7 @@ Module wiring: environments call modules; module outputs feed later modules.
 - Databricks provider authenticates to the **account console** (`https://accounts.cloud.databricks.com`) with the service principal `terraform-deployer` (Account admin, OAuth M2M). Variables: `databricks_account_id`, `databricks_client_id`, `databricks_client_secret` (sensitive). Values live in git-ignored `terraform.tfvars`; in CI use `TF_VAR_*` from GitHub environment secrets.
 - Naming: Databricks-related AWS resources are prefixed `databricks-<env>-...`; the deployer IAM policy (`terraform-iam-databricks-policy`) is scoped to `databricks-*` roles/policies/buckets, so new resources must keep that prefix or the policy must be extended. State bucket policy is scoped to `terraform-state-*`.
 - The deployer role needs new IAM permissions whenever a module creates new resource types (e.g. OIDC provider, DynamoDB, Budgets, VPC endpoints). Policies are created by hand with an IAM-admin identity.
-- `enable_nat` is currently `false` in homol (NAT ~US$33/mo). It **must be `true`** to provision a workspace and the user confirmed it will be switched to `true` soon (needed for Phase 4). Disable/destroy NAT at the end of sessions when not running workloads.
+- `enable_nat` is currently `false` in homol (NAT ~US$33/mo). It **must be `true`** to provision a workspace and the user confirmed it will be switched to `true` soon (needed for Phase 4). `enable_nat` is an env variable (default false): turn on with `terraform apply -var enable_nat=true`, off with `terraform apply -var enable_nat=false` (or a git-ignored tfvars). Turn it off at the end of sessions.
 - Security group descriptions must be plain ASCII. SG `name`/`description` are immutable (force replacement).
 - `tainted` resources: fix permission, verify manually, `terraform untaint`; never blindly recreate.
 - After creating the cross-account role, `mws_credentials` can fail with "Failed credentials validation checks": wait ~20s and re-apply.
@@ -58,7 +58,7 @@ Module wiring: environments call modules; module outputs feed later modules.
 ## Databricks trial constraints
 
 - Trial = 14 days, ~US$400 DBU credit; AWS infra billed separately by AWS. Free Edition is unusable (no account console).
-- **The trial is ALREADY ACTIVE** (started before the Terraform/CI work was finished, because Databricks changed its platform requirements). The original "do not activate until everything is written" rule no longer applies; the clock is running, so prioritize the critical path: NAT on -> workspace -> Unity Catalog -> CI/CD apply. Start date/expiry: unknown, ask the user and record it in `PROGRESS.md`.
+- **The trial is ALREADY ACTIVE** (started before the Terraform/CI work was finished, because Databricks changed its platform requirements). The original "do not activate until everything is written" rule no longer applies; the clock is running, so prioritize the critical path: NAT on -> workspace -> Unity Catalog -> CI/CD apply. 13 days remained on 2026-10-08 (expires about 2026-10-21).
 - Day-by-day plan is in `PROGRESS.md` (Phase 10), counted from the real activation date.
 
 ## CI/CD design (to implement; GitHub Actions is required)
