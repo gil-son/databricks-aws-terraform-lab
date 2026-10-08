@@ -59,9 +59,11 @@ Step-by-step plan for `databricks-aws-terraform-lab` (Project 1). Legend: `[x]` 
 
 ## Phase 6 - Cluster policies and validation
 - [ ] Cluster policies: job clusters by default, auto-termination 15-20 min, capped size/autoscaling
-- [ ] S3 data bucket/prefixes for the integration: `raw/creditcard/`, `export/gold/creditcard/` (naming under `databricks-*` prefix or extend IAM policy)
+- [x] S3 data bucket `databricks-<env>-data-<account>` with `raw/creditcard/` and `export/gold/creditcard/` + UC role policy + external location written, plan 8 to add (branch `feature/data-bucket`)
+- [ ] Apply data bucket, upload `creditcard.csv` to `raw/creditcard/`, test the external location connection
 - [ ] Validation job: read `creditcard.csv` from `raw/`, write Delta `homol_catalog.bronze.creditcard_raw`, confirm in Unity Catalog
-- [ ] Document in README (3.6)
+- [x] Document data bucket in README (3.6)
+- [ ] Terraform grants for homol_catalog
 
 ## Phase 7 - Prod environment
 - [ ] Fill `infra/environments/prod/main.tf` (reuse modules, `environment = "prod"`, prod catalog)

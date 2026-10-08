@@ -172,6 +172,62 @@ resource "aws_iam_role_policy_attachment" "unity_catalog" {
   policy_arn = aws_iam_policy.unity_catalog.arn
 }
 
+# --- Data bucket: input CSV (raw/) and Parquet export for Project 2 (export/) ---
+
+resource "aws_s3_bucket" "data" {
+  bucket = "databricks-${var.environment}-data-${var.account_id}"
+
+  tags = {
+    Name        = "databricks-${var.environment}-data"
+    Environment = var.environment
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "data" {
+  bucket = aws_s3_bucket.data.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "data" {
+  bucket = aws_s3_bucket.data.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+# S3 has no real folders; these empty objects make the prefixes visible in the console
+resource "aws_s3_object" "prefixes" {
+  for_each = toset(["raw/creditcard/", "export/gold/creditcard/"])
+
+  bucket  = aws_s3_bucket.data.id
+  key     = each.key
+  content = ""
+}
+
+# The Unity Catalog role also needs access to the data bucket
+data "databricks_aws_unity_catalog_policy" "data" {
+  aws_account_id = data.aws_caller_identity.current.account_id
+  bucket_name    = aws_s3_bucket.data.id
+  role_name      = local.uc_role_name
+}
+
+resource "aws_iam_policy" "unity_catalog_data" {
+  name   = "databricks-${var.environment}-uc-data-policy"
+  policy = data.databricks_aws_unity_catalog_policy.data.json
+}
+
+resource "aws_iam_role_policy_attachment" "unity_catalog_data" {
+  role       = aws_iam_role.unity_catalog.name
+  policy_arn = aws_iam_policy.unity_catalog_data.arn
+}
+
 # --- Register the cross-account role with Databricks ---
 
 resource "databricks_mws_credentials" "this" {

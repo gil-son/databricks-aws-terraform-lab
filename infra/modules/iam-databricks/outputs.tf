@@ -17,3 +17,7 @@ output "unity_catalog_bucket_name" {
 output "unity_catalog_role_arn" {
   value = aws_iam_role.unity_catalog.arn
 }
+
+output "data_bucket_name" {
+  value = aws_s3_bucket.data.bucket
+}
