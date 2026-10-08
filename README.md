@@ -763,6 +763,82 @@ Notes:
 
 Verify in the workspace under **Catalog**: `homol_catalog` with `bronze`, `silver` and `gold`.
 
+#### 3.5.1 How catalogs work
+
+Every table is addressed by a three-level name: `catalog.schema.table` (for example `homol_catalog.bronze.creditcard_raw`). The metastore stores metadata and permissions, **not** the data; the data stays in S3.
+
+**Objects and how they connect** (solid = applied, dashed grey = planned):
+
+```mermaid
+flowchart TB
+    subgraph ACC["Databricks account"]
+        META["Metastore<br/>metastore_aws_us_east_1<br/>metadata, permissions, lineage - no data"]
+    end
+
+    subgraph GOV["Governance objects in homol - module.unity-catalog"]
+        SC["Storage credential<br/>databricks-homol-uc-credential<br/>says: UC may use this IAM role"]
+        EL["External location<br/>databricks-homol-uc-location<br/>says: for this S3 path use that credential"]
+        CAT["Catalog homol_catalog<br/>isolation level: one per environment"]
+        subgraph SCH["Schemas = medallion layers"]
+            B["bronze<br/>raw data"]
+            S["silver<br/>clean, typed, deduplicated"]
+            G["gold<br/>features for the model"]
+        end
+        T["Tables, e.g. homol_catalog.bronze.creditcard_raw<br/>managed Delta tables - planned"]
+    end
+
+    subgraph AWSX["AWS"]
+        ROLE["IAM role databricks-homol-uc-role"]
+        BUCKET[("S3 databricks-homol-uc-account-id<br/>s3://.../homol_catalog/...  Delta files")]
+    end
+
+    META -->|contains| CAT
+    CAT --> B
+    CAT --> S
+    CAT --> G
+    B -->|holds| T
+    SC -->|wraps| ROLE
+    EL -->|uses| SC
+    EL -->|covers path in| BUCKET
+    CAT -->|managed storage root inside| EL
+    T -.->|files stored in| BUCKET
+    ROLE -->|access policy| BUCKET
+
+    classDef planned stroke-dasharray: 5 5,fill:#f2f2f2,stroke:#888,color:#555
+    class T planned
+```
+
+**What happens when someone reads a table** (this is why other platforms such as SageMaker must never read the Delta files directly: they would skip these checks, so Project 2 reads a Parquet export instead):
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User or job (service principal)
+    participant C as Databricks cluster (EC2 in private subnet)
+    participant UC as Unity Catalog (metastore)
+    participant R as IAM role databricks-homol-uc-role
+    participant S3 as S3 UC bucket
+
+    U->>C: SELECT * FROM homol_catalog.silver.creditcard_clean
+    C->>UC: Resolve table name and check privileges
+    Note over UC: Needs USE CATALOG, USE SCHEMA and SELECT
+    alt privileges missing
+        UC-->>C: Permission denied
+        C-->>U: Error
+    else privileges OK
+        UC->>R: AssumeRole through the storage credential
+        R-->>UC: Temporary AWS credentials
+        UC-->>C: Table path + short-lived credentials
+        C->>S3: Read Delta files with the temporary credentials
+        S3-->>C: Data
+        C-->>U: Result
+    end
+```
+
+**Privileges cascade from top to bottom.** To read a table, a principal needs `USE CATALOG` on the catalog, `USE SCHEMA` on the schema and `SELECT` on the table (or on the whole schema). Today only the owner (the `terraform-deployer` service principal) has access; grants for other principals are still pending.
+
+**Environments.** `homol_catalog` belongs to the homol workspace; `prod_catalog` will be created by the prod environment with its own workspace, bucket and role. Both share the account metastore, but their data and roles are separate, so homol and prod cannot touch each other by accident.
+
 ## Troubleshooting notes
 
 - **Resource marked as `tainted`:** happens when a create/update call is partially accepted by AWS but Terraform can't confirm the final state (often a missing `Get*` IAM permission right after a `Put*`/`Create*` call). Fix the underlying permission, confirm the resource is correct outside Terraform (console or `aws s3api ...` / `aws ec2 describe-...`), then run `terraform untaint <resource>` — never force a destroy/recreate on a resource you haven't verified.
