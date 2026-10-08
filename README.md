@@ -11,7 +11,7 @@ infra/
     network/           # VPC, subnets, security groups
     iam-databricks/    # cross-account role, root bucket, Unity Catalog bucket/role
     workspace/         # Databricks workspace resources
-    unity-catalog/     # metastore, catalogs, schemas, grants
+    unity-catalog/     # storage credential, external location, catalogs, schemas
   environments/
     homol/
     prod/
@@ -510,6 +510,93 @@ The Unity Catalog role's self-assume trust is only exercised when a storage cred
 - **`This API is disabled for users without account admin status`:** authentication worked, but the service principal lacks the **Account admin** role (see 3.3.1).
 - **`Failed credentials validation checks` on `databricks_mws_credentials`:** IAM propagation delay right after creating the role and policy. Wait about 20 seconds and re-run `terraform apply`.
 - **403 on `iam:*` or `s3:*` during apply:** `terraform-iam-databricks-policy` is missing or not attached to `terraform-deployer-role`.
+
+### 3.4 Workspace module (`infra/modules/workspace`)
+
+Registers the storage and network with the Databricks account and creates the workspace itself. Inputs come from the previous modules:
+
+```hcl
+module "workspace" {
+  source = "../../modules/workspace"
+
+  environment        = "homol"
+  account_id         = var.databricks_account_id
+  credentials_id     = module.iam_databricks.credentials_id
+  root_bucket_name   = module.iam_databricks.root_bucket_name
+  vpc_id             = module.network.vpc_id
+  private_subnet_ids = module.network.private_subnet_ids
+  security_group_id  = module.network.security_group_id
+}
+```
+
+| Resource | Purpose |
+|---|---|
+| `databricks_mws_storage_configurations` | Registers the root bucket (`databricks-<env>-storage`) |
+| `databricks_mws_networks` | Registers the VPC, private subnets and security group (`databricks-<env>-network`) |
+| `databricks_mws_workspaces` | Creates the workspace `databricks-<env>` in `us-east-1` |
+
+Outputs: `workspace_id`, `workspace_url` (also exposed by the environment).
+
+#### 3.4.1 Turning the NAT Gateway on and off
+
+The workspace needs the NAT Gateway, which bills hourly (about US$0.05/h with the EIP). `enable_nat` is an environment variable (default `false`), so always pass it explicitly:
+
+```bash
+cd infra/environments/homol
+terraform apply -var enable_nat=true    # NAT on (needed to create and use the workspace)
+terraform apply -var enable_nat=false   # NAT off at the end of a session; workspace and VPC stay
+```
+
+Turning it off removes only the NAT, EIP, IGW, public subnet and public route table; clusters cannot start until it is turned on again. Check in the console under **VPC > NAT gateways**, or:
+
+```bash
+aws ec2 describe-nat-gateways --filter Name=vpc-id,Values=<vpc_id> \
+  --query 'NatGateways[].{Id:NatGatewayId,State:State}' --output table \
+  --profile terraform-deployer --region us-east-1
+```
+
+#### 3.4.2 Workspace access
+
+The workspace is created by the `terraform-deployer` service principal, so a human user cannot open it until assigned: account console > **Workspaces** > `databricks-<env>` > **Permissions** > **Add permissions** > pick the existing user > **Admin**. Without this, the workspace URL shows "You do not have permission to access this page". If the user already exists in the account, do not try to create it again (use *Add permissions* and search for it).
+
+### 3.5 Unity Catalog module (`infra/modules/unity-catalog`)
+
+Databricks automatically creates and attaches a metastore for the region (`metastore_aws_us_east_1`) when the workspace is created, so this module does **not** create a metastore. It uses a second `databricks` provider (alias `workspace`) pointing at `workspace_url`, authenticated with the same service principal:
+
+```hcl
+provider "databricks" {
+  alias         = "workspace"
+  host          = module.workspace.workspace_url
+  client_id     = var.databricks_client_id
+  client_secret = var.databricks_client_secret
+}
+
+module "unity_catalog" {
+  source = "../../modules/unity-catalog"
+  providers = { databricks.workspace = databricks.workspace }
+
+  environment    = "homol"
+  uc_bucket_name = module.iam_databricks.unity_catalog_bucket_name
+  uc_role_arn    = module.iam_databricks.unity_catalog_role_arn
+  catalogs       = ["homol_catalog"]
+}
+```
+
+| Resource | Purpose |
+|---|---|
+| `databricks_storage_credential` | Wraps the `databricks-<env>-uc-role` IAM role |
+| `databricks_external_location` | `s3://databricks-<env>-uc-<account-id>`, backed by that credential |
+| `databricks_catalog` | One catalog per environment (`homol_catalog`), managed storage under `s3://<uc bucket>/<catalog>` |
+| `databricks_schema` | `bronze`, `silver`, `gold` in every catalog |
+
+Each environment (homol, prod) has its own state, VPC, workspace and catalog, in the same AWS account, sharing the account metastore. The `prod_catalog` is created by the prod environment.
+
+Notes:
+- `databricks_external_location.url` is returned with a trailing slash. Building the catalog `storage_root` from it produced `//catalog` and an "inconsistent final plan" error, so the module builds the path from the bucket name and uses `depends_on` on the external location.
+- The storage credential validated with the existing UC role trust policy (account ID as external ID), no change needed.
+- Grants are not managed yet.
+
+Verify in the workspace under **Catalog**: `homol_catalog` with `bronze`, `silver` and `gold`.
 
 ## Troubleshooting notes
 

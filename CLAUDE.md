@@ -31,13 +31,15 @@ infra/
     workspace/          mws_storage_configurations, mws_networks, mws_workspaces (applied in homol: workspace_id 7474658903342069, https://dbc-405a719f-a0d8.cloud.databricks.com)
     unity-catalog/      storage credential, external location, catalogs, schemas (applied in homol; grants TODO). Metastore is auto-created/attached by Databricks (metastore_aws_us_east_1), not managed here
   environments/
-    homol/              main.tf, variables.tf, backend.tf (in use)
+    homol/              main.tf, variables.tf, outputs.tf, backend.tf (in use; two databricks providers: account + alias `workspace`)
     prod/               backend.tf, main.tf EMPTY files
 .github/workflows/      4 EMPTY files: terraform-plan, terraform-apply-homol, terraform-apply-prod, terraform-destroy-homol (untracked in git)
 ```
 
 Module wiring: environments call modules; module outputs feed later modules.
 - network outputs: `vpc_id`, `private_subnet_ids`, `security_group_id`, `nat_enabled`
+- workspace outputs: `workspace_id`, `workspace_url`
+- unity-catalog outputs: `catalog_names`, `schema_full_names`
 - iam-databricks outputs: `credentials_id`, `cross_account_role_arn`, `root_bucket_name`, `unity_catalog_bucket_name`, `unity_catalog_role_arn`
 
 ## Conventions and key decisions
@@ -48,7 +50,7 @@ Module wiring: environments call modules; module outputs feed later modules.
 - Databricks provider authenticates to the **account console** (`https://accounts.cloud.databricks.com`) with the service principal `terraform-deployer` (Account admin, OAuth M2M). Variables: `databricks_account_id`, `databricks_client_id`, `databricks_client_secret` (sensitive). Values live in git-ignored `terraform.tfvars`; in CI use `TF_VAR_*` from GitHub environment secrets.
 - Naming: Databricks-related AWS resources are prefixed `databricks-<env>-...`; the deployer IAM policy (`terraform-iam-databricks-policy`) is scoped to `databricks-*` roles/policies/buckets, so new resources must keep that prefix or the policy must be extended. State bucket policy is scoped to `terraform-state-*`.
 - The deployer role needs new IAM permissions whenever a module creates new resource types (e.g. OIDC provider, DynamoDB, Budgets, VPC endpoints). Policies are created by hand with an IAM-admin identity.
-- `enable_nat` is currently `false` in homol (NAT ~US$33/mo). It **must be `true`** to provision a workspace and the user confirmed it will be switched to `true` soon (needed for Phase 4). `enable_nat` is an env variable (default false): turn on with `terraform apply -var enable_nat=true`, off with `terraform apply -var enable_nat=false` (or a git-ignored tfvars). Turn it off at the end of sessions.
+- `enable_nat` is an env variable (default false; NAT ~US$33/mo). It **must be `true`** for a working workspace. It is currently **ON in homol** (applied 2026-10-08). Always pass it explicitly: `terraform apply -var enable_nat=true` (keep) or `-var enable_nat=false` (end of session), otherwise the default turns it off. Turn it off when idle.
 - Security group descriptions must be plain ASCII. SG `name`/`description` are immutable (force replacement).
 - `tainted` resources: fix permission, verify manually, `terraform untaint`; never blindly recreate.
 - After creating the cross-account role, `mws_credentials` can fail with "Failed credentials validation checks": wait ~20s and re-apply.
@@ -58,13 +60,12 @@ Module wiring: environments call modules; module outputs feed later modules.
 ## Databricks trial constraints
 
 - Trial = 14 days, ~US$400 DBU credit; AWS infra billed separately by AWS. Free Edition is unusable (no account console).
-- **The trial is ALREADY ACTIVE** (started before the Terraform/CI work was finished, because Databricks changed its platform requirements). The original "do not activate until everything is written" rule no longer applies; the clock is running, so prioritize the critical path: NAT on -> workspace -> Unity Catalog -> CI/CD apply. 13 days remained on 2026-10-08 (expires about 2026-10-21).
+- **The trial is ALREADY ACTIVE** (started before the Terraform/CI work was finished, because Databricks changed its platform requirements). The original "do not activate until everything is written" rule no longer applies; the clock is running, so Done so far: NAT on, workspace, Unity Catalog in homol. Next: cluster policies/validation job and CI/CD. 13 days remained on 2026-10-08 (expires about 2026-10-21).
 - Day-by-day plan is in `PROGRESS.md` (Phase 10), counted from the real activation date.
 
 ## CI/CD design (to implement; GitHub Actions is required)
 
-Current state: the 4 workflow files exist but are empty and untracked. They were scaffolded only as a sanity check that the project is on track; real content is still to be written.
-
+Current state: the 4 workflow files exist but are empty and untracked (scaffolded only as a sanity check); real content is still to be written. Envs are simulated in one AWS account with one workspace per environment.
 
 - `terraform-plan.yml`: on PR touching `infra/**`, matrix [homol, prod]; fmt -check, init, validate, plan, post plan as PR comment.
 - `terraform-apply-homol.yml`: push to `main` filtered by `infra/environments/homol/**` and `infra/modules/**`; `concurrency.group: terraform-homol`, `cancel-in-progress: false`; `environment: homol`.
@@ -79,7 +80,7 @@ NAT Gateway ~US$0.045/h, public IPv4 US$0.005/h, interface endpoints US$0.01/end
 ## Working style for this repo
 
 - User writes in Portuguese; repo docs, code, commits and these files are in English.
-- Commits follow conventional style (`feat(network): ...`, `docs: ...`); branch per feature (current: `feature/iam-databricks`, main branch `main`).
+- Commits follow conventional style (`feat(network): ...`, `docs: ...`); branch per feature (current: `feature/workspace`, holds workspace + unity-catalog, not yet pushed; iam-databricks was merged via PR #1; main branch `main`).
 - Document every completed module in `README.md` (section numbering 3.x) and tick it in `PROGRESS.md`.
 
 ## Decisions log
@@ -87,3 +88,4 @@ NAT Gateway ~US$0.045/h, public IPv4 US$0.005/h, interface endpoints US$0.01/end
 - Environments are simulated in one AWS account: each env (homol, prod) has its own state, VPC, workspace and catalog (`<env>_catalog`), sharing the account metastore. Prod applied only once CI/CD is ready.
 - Gotcha: `databricks_external_location.url` is returned with a trailing slash; build catalog `storage_root` from the bucket name instead.
 - Humans must be assigned to the workspace in the account console (Workspaces > Permissions) to log in; the service principal creator is not enough.
+- Workspace state (2026-10-08): workspace `databricks-homol` RUNNING; UC applied (`homol_catalog`, `bronze/silver/gold`, credential `databricks-homol-uc-credential`, location `databricks-homol-uc-location` on the UC bucket). Not yet done: grants, cluster policies, data bucket (`raw/`, `export/`), CI/CD, prod.
