@@ -28,3 +28,8 @@ variable "data_bucket_name" {
   description = "S3 data bucket (raw input and Parquet export), from the iam-databricks module"
   type        = string
 }
+
+variable "admin_user_email" {
+  description = "Human user (email) that gets full privileges on the catalogs and data location"
+  type        = string
+}

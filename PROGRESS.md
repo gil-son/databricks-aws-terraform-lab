@@ -55,18 +55,19 @@ Step-by-step plan for `databricks-aws-terraform-lab` (Project 1). Legend: `[x]` 
 - [x] Metastore: not created by us; Databricks auto-created and attached `metastore_aws_us_east_1` to the workspace
 - [x] Storage credential + external location applied; validated OK with the existing UC role trust (no change needed)
 - [x] Catalog `homol_catalog` + schemas `bronze`, `silver`, `gold` applied in homol (4 added); `prod_catalog` will be created by the prod environment (own workspace, own state)
-- [ ] Explicit grants (read/write per schema, groups or service principals)
+- [x] Explicit grants: service principal `databricks-homol-pipeline` + `databricks_grants` for catalog, schemas and data location (`grants.tf`, applied in homol)
 - [x] Document in README (3.5)
 
 ## Phase 6 - Data bucket, cluster policies and validation (IN PROGRESS)
 - [ ] Cluster policies (module/location TBD): job clusters by default, auto-termination 15-20 min, capped size/autoscaling
 - [x] S3 data bucket `databricks-<env>-data-<account>` with `raw/creditcard/` and `export/gold/creditcard/` + UC role policy + external location written, plan 8 to add (branch `feature/data-bucket`)
 - [x] Data bucket applied; both external locations visible in Catalog Explorer once the user became metastore admin / got visibility (objects are owned by the service principal, so other users see nothing until granted)
-- [ ] Upload `creditcard.csv` to `raw/creditcard/` (download from Kaggle `mlg-ulb/creditcardfraud` or Zenodo 7395559)
-- [ ] Click **Test connection** on `databricks-homol-data-location` (Catalog > External Data > External Locations)
+- [ ] Upload `creditcard.csv` (already in the repo root, now git-ignored via `*.csv`) to `raw/creditcard/`
+- [x] **Test connection** on `databricks-homol-data-location`: all checks succeeded
 - [ ] Validation job: read `creditcard.csv` from `raw/`, write Delta `homol_catalog.bronze.creditcard_raw`, confirm in Unity Catalog
 - [x] Document data bucket in README (3.6)
-- [ ] Terraform grants (next up): user `gilson.inspire@gmail.com` on `homol_catalog`/schemas and on the external locations, via a `databricks_grants` block; email passed as a variable in git-ignored tfvars
+- [x] Terraform grants applied: user (`admin_user_email` in git-ignored tfvars) has ALL_PRIVILEGES; pipeline SP has least privilege (README 3.5.2)
+- [ ] Pipeline SP: OAuth secret for GitHub Actions, cluster policy `CAN_USE`, job permissions
 
 ## Phase 7 - Prod environment
 - [ ] Fill `infra/environments/prod/main.tf` (reuse modules, `environment = "prod"`, prod catalog)
@@ -112,5 +113,6 @@ Workflow files exist but are empty (structure sanity check only). Trial clock is
 - [x] Initial README with IAM setup, bootstrap, network, iam-databricks docs and troubleshooting
 - [ ] Add Terraform-state and tfvars entries to `.gitignore` check (verify `terraform.tfvars` and `.terraform/` ignored)
 - [x] workspace + unity-catalog modules merged (PRs #1-#4 incl. diagrams)
-- [ ] Merge PR for `feature/data-bucket` (pushed; data bucket + external location + docs)
+- [x] `feature/data-bucket` merged (PR #5)
+- [ ] Merge PR for `feature/uc-grants` (grants + docs)
 - [ ] Keep this file and README updated after each module

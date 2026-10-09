@@ -19,3 +19,8 @@ variable "enable_nat" {
   type        = bool
   default     = false
 }
+
+variable "admin_user_email" {
+  description = "Human user (email) with full privileges on homol UC objects"
+  type        = string
+}

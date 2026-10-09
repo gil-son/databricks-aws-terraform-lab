@@ -6,3 +6,5 @@
 crash.log
 crash.*.log
 .terraform.lock.hcl
+# Datasets (uploaded to S3, never committed)
+*.csv

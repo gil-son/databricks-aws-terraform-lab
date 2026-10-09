@@ -68,5 +68,6 @@ module "unity_catalog" {
   uc_bucket_name   = module.iam_databricks.unity_catalog_bucket_name
   uc_role_arn      = module.iam_databricks.unity_catalog_role_arn
   data_bucket_name = module.iam_databricks.data_bucket_name
+  admin_user_email = var.admin_user_email
   catalogs         = ["homol_catalog"]
 }
