@@ -746,6 +746,9 @@ module "unity_catalog" {
   uc_bucket_name = module.iam_databricks.unity_catalog_bucket_name
   uc_role_arn    = module.iam_databricks.unity_catalog_role_arn
   catalogs       = ["homol_catalog"]
+
+  data_bucket_name = module.iam_databricks.data_bucket_name
+  admin_user_email = var.admin_user_email # git-ignored terraform.tfvars
 }
 ```
 
@@ -755,13 +758,15 @@ module "unity_catalog" {
 | `databricks_external_location` | `s3://databricks-<env>-uc-<account-id>`, backed by that credential |
 | `databricks_catalog` | One catalog per environment (`homol_catalog`), managed storage under `s3://<uc bucket>/<catalog>` |
 | `databricks_schema` | `bronze`, `silver`, `gold` in every catalog |
+| `databricks_service_principal` | `databricks-<env>-pipeline`, identity for jobs and (later) Project 2 workflows |
+| `databricks_grants` | Privileges on catalogs, schemas and the data external location (see 3.5.2) |
 
 Each environment (homol, prod) has its own state, VPC, workspace and catalog, in the same AWS account, sharing the account metastore. The `prod_catalog` is created by the prod environment.
 
 Notes:
 - `databricks_external_location.url` is returned with a trailing slash. Building the catalog `storage_root` from it produced `//catalog` and an "inconsistent final plan" error, so the module builds the path from the bucket name and uses `depends_on` on the external location.
 - The storage credential validated with the existing UC role trust policy (account ID as external ID), no change needed.
-- Grants are not managed yet. Until they are, objects created by the service principal are only visible to that principal and to metastore admins: a human user sees an empty **External Locations** list in Catalog Explorer.
+- Objects are created by the `terraform-deployer` service principal, so they are owned by it. Without grants, other principals see nothing in Catalog Explorer; grants are now managed in `grants.tf` (3.5.2).
 
 Verify in the workspace under **Catalog**: `homol_catalog` with `bronze`, `silver` and `gold`.
 
@@ -837,9 +842,49 @@ sequenceDiagram
     end
 ```
 
-**Privileges cascade from top to bottom.** To read a table, a principal needs `USE CATALOG` on the catalog, `USE SCHEMA` on the schema and `SELECT` on the table (or on the whole schema). Today only the owner (the `terraform-deployer` service principal) has access; grants for other principals are still pending.
+**Privileges cascade from top to bottom.** To read a table, a principal needs `USE CATALOG` on the catalog, `USE SCHEMA` on the schema and `SELECT` on the table (or on the whole schema). The owner (the `terraform-deployer` service principal) always has access; everyone else needs the explicit grants described in 3.5.2.
 
 **Environments.** `homol_catalog` belongs to the homol workspace; `prod_catalog` will be created by the prod environment with its own workspace, bucket and role. Both share the account metastore, but their data and roles are separate, so homol and prod cannot touch each other by accident.
+
+#### 3.5.2 Grants (`grants.tf`)
+
+The module creates a pipeline identity and grants privileges with `databricks_grants`. Two principals are used: the human user (email from `admin_user_email`, set in the git-ignored `terraform.tfvars`) and the service principal `databricks-<env>-pipeline`, referenced by its `application_id` (the UUID that is also its OAuth `client_id`).
+
+| Securable | Human user | Pipeline service principal |
+|---|---|---|
+| Catalog (`homol_catalog`) | `ALL_PRIVILEGES` | `USE_CATALOG` |
+| Schemas (`bronze`, `silver`, `gold`) | `ALL_PRIVILEGES` | `USE_SCHEMA`, `SELECT`, `MODIFY`, `CREATE_TABLE` |
+| External location `databricks-<env>-data-location` | `ALL_PRIVILEGES` | `READ_FILES`, `WRITE_FILES` |
+
+```mermaid
+flowchart LR
+    U["User<br/>gilson.inspire@gmail.com"]
+    P["Service principal<br/>databricks-homol-pipeline"]
+
+    subgraph UC["Unity Catalog - homol"]
+        CAT["Catalog homol_catalog"]
+        SCH["Schemas bronze / silver / gold"]
+        LOC["External location<br/>databricks-homol-data-location"]
+    end
+
+    DATA[("S3 data bucket<br/>raw/ and export/")]
+
+    U -->|ALL PRIVILEGES| CAT
+    U -->|ALL PRIVILEGES| SCH
+    U -->|ALL PRIVILEGES| LOC
+    P -->|USE CATALOG| CAT
+    P -->|"USE SCHEMA, SELECT,<br/>MODIFY, CREATE TABLE"| SCH
+    P -->|"READ FILES (raw/)<br/>WRITE FILES (export/)"| LOC
+    CAT --> SCH
+    LOC -->|covers| DATA
+```
+
+Notes:
+- `databricks_grants` is **authoritative**: it replaces any privilege granted by hand in the console on that object. Use `databricks_grant` (singular) for additive grants.
+- The pipeline principal has least privilege: it can read and write tables and files, but cannot drop schemas or grant access to others.
+- Not done yet: an OAuth secret for the pipeline principal (for GitHub Actions), permission to use cluster policies and run jobs.
+
+Verify in **Catalog > homol_catalog > Permissions** (and each schema), and in **External Locations > databricks-homol-data-location > Permissions**. The Settings > Identity and access > Service principals page lists `databricks-homol-pipeline`. The data location also passes **Test connection** (all checks succeed).
 
 ### 3.6 Data bucket and external location (Project 2 integration)
 

@@ -80,7 +80,7 @@ NAT Gateway ~US$0.045/h, public IPv4 US$0.005/h, interface endpoints US$0.01/end
 ## Working style for this repo
 
 - User writes in Portuguese; repo docs, code, commits and these files are in English.
-- Commits follow conventional style (`feat(network): ...`, `docs: ...`); branch per feature (current: `feature/data-bucket`, pushed, PR pending; earlier work merged via PRs #1-#4; main branch `main`). Always branch from updated `origin/main`.
+- Commits follow conventional style (`feat(network): ...`, `docs: ...`); branch per feature (current: `feature/uc-grants`, PR pending; earlier work merged via PRs #1-#5; main branch `main`). Always branch from updated `origin/main`.
 - Document every completed module in `README.md` (section numbering 3.x) and tick it in `PROGRESS.md`.
 
 ## Decisions log
@@ -88,14 +88,14 @@ NAT Gateway ~US$0.045/h, public IPv4 US$0.005/h, interface endpoints US$0.01/end
 - Environments are simulated in one AWS account: each env (homol, prod) has its own state, VPC, workspace and catalog (`<env>_catalog`), sharing the account metastore. Prod applied only once CI/CD is ready.
 - Gotcha: `databricks_external_location.url` is returned with a trailing slash; build catalog `storage_root` from the bucket name instead.
 - Humans must be assigned to the workspace in the account console (Workspaces > Permissions) to log in; the service principal creator is not enough.
-- Workspace state (2026-10-08): workspace `databricks-homol` RUNNING; UC applied (`homol_catalog`, `bronze/silver/gold`, credential `databricks-homol-uc-credential`, location `databricks-homol-uc-location` on the UC bucket). Data bucket `databricks-<env>-data-<account>` (raw/, export/) + external location written on branch `feature/data-bucket` (applied). Not yet done: grants, cluster policies, validation job, CI/CD, prod.
+- Workspace state (2026-10-08): workspace `databricks-homol` RUNNING; UC applied (`homol_catalog`, `bronze/silver/gold`, credential `databricks-homol-uc-credential`, location `databricks-homol-uc-location` on the UC bucket). Data bucket `databricks-<env>-data-<account>` (raw/, export/) + external location written on branch `feature/data-bucket` (applied). Grants applied (feature/uc-grants). Not yet done: cluster policies, validation job, CI/CD, prod.
 
 ## Next session: where to start
 
-1. Merge PR for `feature/data-bucket`; branch from updated `main`.
-2. `terraform apply -var enable_nat=true` in `infra/environments/homol` (NAT is off) only when a cluster will run.
-3. Upload `creditcard.csv` to `s3://databricks-homol-data-<databricks-account-id>/raw/creditcard/` (profile `terraform-deployer`); Databricks account id is `9eef56f6-024b-42fb-a097-a621c21b337b`.
-4. Write Terraform grants for the user (`gilson.inspire@gmail.com`) and the pipeline principal; the user currently only sees UC objects because of metastore-admin/visibility changes made in the console (not in Terraform).
-5. Cluster policies + validation job (CSV to `homol_catalog.bronze.creditcard_raw`), then CI/CD (4 empty workflows), then prod.
+1. Merge PR for `feature/uc-grants`; branch from updated `origin/main`.
+2. `terraform apply -var enable_nat=true` in `infra/environments/homol` (NAT is off; confirm the EIP release fix first) only when a cluster will run.
+3. Upload `creditcard.csv` (repo root, git-ignored) to `s3://databricks-homol-data-<aws-account-id>/raw/creditcard/` (profile `terraform-deployer`).
+4. Cluster policies + `CAN_USE`/job permissions for `databricks-homol-pipeline`, then the validation job (CSV to `homol_catalog.bronze.creditcard_raw`).
+5. CI/CD (OIDC, environments, 4 empty workflows), then prod.
 - The trial expires about 2026-10-21; the user learns by checking AWS/Databricks consoles after each step, so tell them what to verify and where.
 - The user applies Terraform themselves (give them the commands); do not run `apply` unless asked.
