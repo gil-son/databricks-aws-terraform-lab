@@ -9,3 +9,8 @@ output "schema_full_names" {
 output "data_external_location_url" {
   value = "s3://${var.data_bucket_name}"
 }
+
+output "pipeline_application_id" {
+  description = "OAuth client_id of the pipeline service principal"
+  value       = databricks_service_principal.pipeline.application_id
+}

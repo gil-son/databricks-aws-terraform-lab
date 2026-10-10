@@ -50,7 +50,7 @@ Module wiring: environments call modules; module outputs feed later modules.
 - Databricks provider authenticates to the **account console** (`https://accounts.cloud.databricks.com`) with the service principal `terraform-deployer` (Account admin, OAuth M2M). Variables: `databricks_account_id`, `databricks_client_id`, `databricks_client_secret` (sensitive). Values live in git-ignored `terraform.tfvars`; in CI use `TF_VAR_*` from GitHub environment secrets.
 - Naming: Databricks-related AWS resources are prefixed `databricks-<env>-...`; the deployer IAM policy (`terraform-iam-databricks-policy`) is scoped to `databricks-*` roles/policies/buckets, so new resources must keep that prefix or the policy must be extended. State bucket policy is scoped to `terraform-state-*`.
 - The deployer role needs new IAM permissions whenever a module creates new resource types (e.g. OIDC provider, DynamoDB, Budgets, VPC endpoints). Policies are created by hand with an IAM-admin identity.
-- `enable_nat` is an env variable (default false; NAT ~US$33/mo). It **must be `true`** for a working workspace. It is currently **OFF in homol** (NAT gateway deleted at the end of the 2026-10-08 session, but the apply failed releasing the EIP for lack of `ec2:DisassociateAddress`: confirm the policy was fixed and the apply re-run). Turn it ON again before running clusters. Always pass it explicitly: `terraform apply -var enable_nat=true` (keep) or `-var enable_nat=false` (end of session), otherwise the default turns it off. Turn it off when idle.
+- `enable_nat` is an env variable (default false; NAT ~US$33/mo). It **must be `true`** for a working workspace. It is currently **OFF in homol** (EIP release fixed; `ec2:ReplaceRoute` also needed in `terraform-network-policy` to turn it on; turned off after the 2026-10-10 validation run). Turn it ON again before running clusters. Always pass it explicitly: `terraform apply -var enable_nat=true` (keep) or `-var enable_nat=false` (end of session), otherwise the default turns it off. Turn it off when idle.
 - Security group descriptions must be plain ASCII. SG `name`/`description` are immutable (force replacement).
 - `tainted` resources: fix permission, verify manually, `terraform untaint`; never blindly recreate.
 - After creating the cross-account role, `mws_credentials` can fail with "Failed credentials validation checks": wait ~20s and re-apply.
@@ -80,7 +80,7 @@ NAT Gateway ~US$0.045/h, public IPv4 US$0.005/h, interface endpoints US$0.01/end
 ## Working style for this repo
 
 - User writes in Portuguese; repo docs, code, commits and these files are in English.
-- Commits follow conventional style (`feat(network): ...`, `docs: ...`); branch per feature (current: `feature/uc-grants`, PR pending; earlier work merged via PRs #1-#5; main branch `main`). Always branch from updated `origin/main`.
+- Commits follow conventional style (`feat(network): ...`, `docs: ...`); branch per feature (current: `feature/cluster-policies`, PR pending; earlier work merged via PRs #1-#5; main branch `main`). Always branch from updated `origin/main`.
 - Document every completed module in `README.md` (section numbering 3.x) and tick it in `PROGRESS.md`.
 
 ## Decisions log
@@ -88,14 +88,13 @@ NAT Gateway ~US$0.045/h, public IPv4 US$0.005/h, interface endpoints US$0.01/end
 - Environments are simulated in one AWS account: each env (homol, prod) has its own state, VPC, workspace and catalog (`<env>_catalog`), sharing the account metastore. Prod applied only once CI/CD is ready.
 - Gotcha: `databricks_external_location.url` is returned with a trailing slash; build catalog `storage_root` from the bucket name instead.
 - Humans must be assigned to the workspace in the account console (Workspaces > Permissions) to log in; the service principal creator is not enough.
-- Workspace state (2026-10-08): workspace `databricks-homol` RUNNING; UC applied (`homol_catalog`, `bronze/silver/gold`, credential `databricks-homol-uc-credential`, location `databricks-homol-uc-location` on the UC bucket). Data bucket `databricks-<env>-data-<account>` (raw/, export/) + external location written on branch `feature/data-bucket` (applied). Grants applied (feature/uc-grants). Not yet done: cluster policies, validation job, CI/CD, prod.
+- Workspace state (2026-10-08): workspace `databricks-homol` RUNNING; UC applied (`homol_catalog`, `bronze/silver/gold`, credential `databricks-homol-uc-credential`, location `databricks-homol-uc-location` on the UC bucket). Data bucket `databricks-<env>-data-<account>` (raw/, export/) + external location written on branch `feature/data-bucket` (applied). Grants applied (feature/uc-grants). Cluster policies + validation job done (`infra/modules/compute`, branch `feature/cluster-policies`). Not yet done: CI/CD, prod, Project 2 pipeline.
 
 ## Next session: where to start
 
-1. Merge PR for `feature/uc-grants`; branch from updated `origin/main`.
-2. `terraform apply -var enable_nat=true` in `infra/environments/homol` (NAT is off; confirm the EIP release fix first) only when a cluster will run.
-3. Upload `creditcard.csv` (repo root, git-ignored) to `s3://databricks-homol-data-<aws-account-id>/raw/creditcard/` (profile `terraform-deployer`).
-4. Cluster policies + `CAN_USE`/job permissions for `databricks-homol-pipeline`, then the validation job (CSV to `homol_catalog.bronze.creditcard_raw`).
-5. CI/CD (OIDC, environments, 4 empty workflows), then prod.
+1. Commit/PR `feature/cluster-policies` (compute module, docs); branch from updated `origin/main` afterwards.
+2. CI/CD: OIDC provider + `github-actions-terraform` role (extend the deployer policy), GitHub Environments, secrets, then the 4 workflows in `.github/workflows/` (add `.github/` to git).
+3. OAuth secret for `databricks-homol-pipeline` (for Project 2 and CI), then prod environment.
+4. Project 2 pipeline (bronze -> silver -> gold, MLflow, export). NAT is OFF; turn it on only when a cluster will run (`-var enable_nat=true`), off afterwards.
 - The trial expires about 2026-10-21; the user learns by checking AWS/Databricks consoles after each step, so tell them what to verify and where.
 - The user applies Terraform themselves (give them the commands); do not run `apply` unless asked.

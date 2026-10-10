@@ -71,3 +71,19 @@ module "unity_catalog" {
   admin_user_email = var.admin_user_email
   catalogs         = ["homol_catalog"]
 }
+
+module "compute" {
+  source = "../../modules/compute"
+
+  providers = {
+    databricks.workspace = databricks.workspace
+  }
+
+  environment             = "homol"
+  catalog_name            = module.unity_catalog.catalog_names[0]
+  data_bucket_name        = module.iam_databricks.data_bucket_name
+  pipeline_application_id = module.unity_catalog.pipeline_application_id
+  admin_user_email        = var.admin_user_email
+  account_id              = var.databricks_account_id
+  deployer_application_id = var.databricks_client_id
+}
