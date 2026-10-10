@@ -10,7 +10,7 @@ Step-by-step plan for `databricks-aws-terraform-lab` (Project 1). Legend: `[x]` 
 - [x] Configure AWS CLI profiles (`terraform-cli-user`, `terraform-deployer`) and test both identities
 - [x] Create `terraform-iam-databricks-policy` and attach to the role
 - [x] Create Databricks service principal `terraform-deployer` with Account admin and OAuth secret
-- [ ] Add `ec2:AssociateAddress` and `ec2:DisassociateAddress` to `terraform-network-policy` (by hand, IAM admin) and re-run `apply -var enable_nat=false` to release the Elastic IP
+- [x] Add `ec2:AssociateAddress` and `ec2:DisassociateAddress` to `terraform-network-policy`; `apply -var enable_nat=false` re-run and `aws ec2 describe-addresses` returns an empty list (EIP released)
 - [ ] Configure AWS Budgets alert on the AWS account
 - [x] Databricks 14-day trial activated early (platform requirements changed); pre-trial gate no longer blocking
 - [x] Trial status: 13 days remaining as of 2026-10-08 (expires about 2026-10-21)
@@ -29,7 +29,7 @@ Step-by-step plan for `databricks-aws-terraform-lab` (Project 1). Legend: `[x]` 
 - [x] Module outputs (`vpc_id`, `private_subnet_ids`, `security_group_id`, `nat_enabled`)
 - [x] Apply in homol with `enable_nat = false` and document (README 3.2)
 - [ ] Optional: VPC endpoints (S3 gateway, STS/Kinesis interface) behind a flag
-- [x] `enable_nat = true` applied for the workspace (NAT `nat-052076b3fa0e2d29f`). Turn off at the end of each session with `terraform apply -var enable_nat=false`. **Current state (end of session 2026-10-08): NAT gateway deleted, but `apply -var enable_nat=false` failed on `ec2:DisassociateAddress`; Elastic IP may still exist until the policy is fixed and the apply re-run**; turn it on again with `-var enable_nat=true` before running any cluster
+- [x] `enable_nat = true` applied for the workspace (NAT `nat-052076b3fa0e2d29f`). Turn off at the end of each session with `terraform apply -var enable_nat=false`. **Current state (end of session 2026-10-10): NAT OFF after the validation run**; turn it on again with `-var enable_nat=true` before running any cluster
 
 ## Phase 3 - IAM Databricks module
 - [x] Cross-account role + policy (Databricks data sources, `customer` policy type)
@@ -59,15 +59,16 @@ Step-by-step plan for `databricks-aws-terraform-lab` (Project 1). Legend: `[x]` 
 - [x] Document in README (3.5)
 
 ## Phase 6 - Data bucket, cluster policies and validation (IN PROGRESS)
-- [ ] Cluster policies (module/location TBD): job clusters by default, auto-termination 15-20 min, capped size/autoscaling
+- [x] Cluster policies (`infra/modules/compute`): job policy + interactive policy (auto-termination 20 min, max 2 workers), `CAN_USE` for SP and user (README 3.7)
 - [x] S3 data bucket `databricks-<env>-data-<account>` with `raw/creditcard/` and `export/gold/creditcard/` + UC role policy + external location written, plan 8 to add (branch `feature/data-bucket`)
 - [x] Data bucket applied; both external locations visible in Catalog Explorer once the user became metastore admin / got visibility (objects are owned by the service principal, so other users see nothing until granted)
-- [ ] Upload `creditcard.csv` (already in the repo root, now git-ignored via `*.csv`) to `raw/creditcard/`
+- [x] Upload `creditcard.csv` to `raw/creditcard/` (143 MiB, verified in S3)
 - [x] **Test connection** on `databricks-homol-data-location`: all checks succeeded
-- [ ] Validation job: read `creditcard.csv` from `raw/`, write Delta `homol_catalog.bronze.creditcard_raw`, confirm in Unity Catalog
+- [x] Validation job `databricks-homol-validate-bronze` ran as the pipeline SP: 284807 rows / 492 frauds in `homol_catalog.bronze.creditcard_raw`, table visible in Unity Catalog (2026-10-10)
 - [x] Document data bucket in README (3.6)
 - [x] Terraform grants applied: user (`admin_user_email` in git-ignored tfvars) has ALL_PRIVILEGES; pipeline SP has least privilege (README 3.5.2)
-- [ ] Pipeline SP: OAuth secret for GitHub Actions, cluster policy `CAN_USE`, job permissions
+- [x] Pipeline SP: `CAN_USE` on both policies, `CAN_MANAGE_RUN` on the job, `workspace_access` entitlement, `servicePrincipal.user` rule set
+- [ ] Pipeline SP: OAuth secret for GitHub Actions (needed for CI/CD)
 
 ## Phase 7 - Prod environment
 - [ ] Fill `infra/environments/prod/main.tf` (reuse modules, `environment = "prod"`, prod catalog)
@@ -99,7 +100,8 @@ Workflow files exist but are empty (structure sanity check only). Trial clock is
 - [x] Network + IAM applied, homol workspace created and accessible
 - [ ] Run `terraform-apply-homol.yml` end to end
 - [x] Catalogs/schemas in homol
-- [ ] Cluster policies, validation job, run Project 2 pipeline on the workspace, test homol -> prod promotion with manual approval
+- [x] Cluster policies and validation job (homol)
+- [ ] Run Project 2 pipeline on the workspace, test homol -> prod promotion with manual approval
 - [ ] Day 10-12: apply prod with approval; optional streaming test (Project 2 phase 3); document architecture decisions (screenshots, notes)
 - [ ] Day 13-14: `terraform destroy` (or move to paid account); verify NAT, endpoints, EC2 removed; review AWS and Databricks billing; consolidate docs into README/post
 
@@ -114,5 +116,6 @@ Workflow files exist but are empty (structure sanity check only). Trial clock is
 - [ ] Add Terraform-state and tfvars entries to `.gitignore` check (verify `terraform.tfvars` and `.terraform/` ignored)
 - [x] workspace + unity-catalog modules merged (PRs #1-#4 incl. diagrams)
 - [x] `feature/data-bucket` merged (PR #5)
-- [ ] Merge PR for `feature/uc-grants` (grants + docs)
+- [x] Merge PR for `feature/uc-grants` (grants + docs)
+- [ ] Commit/PR for `feature/cluster-policies` (compute module, ReplaceRoute doc, SP entitlement)
 - [ ] Keep this file and README updated after each module

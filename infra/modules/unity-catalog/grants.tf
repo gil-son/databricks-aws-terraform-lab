@@ -4,6 +4,9 @@ resource "databricks_service_principal" "pipeline" {
   provider = databricks.workspace
 
   display_name = "databricks-${var.environment}-pipeline"
+
+  # Without this entitlement a job cannot run as the SP ("does not have access to Databricks Workspace")
+  workspace_access = true
 }
 
 locals {

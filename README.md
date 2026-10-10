@@ -281,6 +281,7 @@ No console access, no permissions attached directly — this user only gets the 
         "ec2:DeleteRouteTable",
         "ec2:DescribeRouteTables",
         "ec2:CreateRoute",
+        "ec2:ReplaceRoute",
         "ec2:DeleteRoute",
         "ec2:AssociateRouteTable",
         "ec2:DisassociateRouteTable",
@@ -942,6 +943,93 @@ aws s3 cp creditcard.csv \
 Verify:
 - AWS console: **S3 > databricks-homol-data-...** shows both prefixes; **IAM > Roles > databricks-homol-uc-role > Permissions** lists two policies (`uc-policy`, `uc-data-policy`).
 - Databricks workspace: **Catalog > External Data > External locations** lists `databricks-homol-uc-location` and `databricks-homol-data-location`. Open the data one and use **Test connection**.
+
+### 3.7 Compute: cluster policies and validation job (`infra/modules/compute`)
+
+Cluster policies cap what can be launched, and a first job proves the whole chain works (S3 -> Unity Catalog -> Delta). Uses the `databricks.workspace` provider alias, like `unity-catalog`.
+
+| Resource | Purpose |
+|---|---|
+| `databricks-<env>-job-policy` | `cluster_type=job`: fixed Spark LTS, node type and `SINGLE_USER` mode, at most 2 workers |
+| `databricks-<env>-interactive-policy` | `cluster_type=all-purpose`: same limits plus auto-termination of at most 20 min and capped autoscale |
+| `databricks_permissions` on each policy | `CAN_USE` for the pipeline service principal and the admin user |
+| `databricks_notebook` `/Shared/<env>/validate_bronze` | Reads `raw/creditcard/creditcard.csv`, writes `<catalog>.bronze.creditcard_raw` as Delta, asserts 284807 rows and 492 frauds |
+| `databricks-<env>-validate-bronze` job | One task on a 1-worker job cluster, runs as the pipeline service principal (`run_as`) so it exercises the least-privilege grants |
+| `databricks_permissions` on job and notebook | `CAN_MANAGE_RUN` on the job, `CAN_READ`/`CAN_RUN` on the notebook |
+| `databricks_access_control_rule_set` | Gives `servicePrincipal.user` on the pipeline SP to the deployer and the admin user, required to create a job with `run_as` |
+
+Why two policies: job clusters do not accept `autotermination_minutes` (the cluster dies when the run ends), so one policy cannot serve both cluster types.
+
+```mermaid
+flowchart LR
+    TF["Terraform<br/>module.compute"]
+
+    subgraph WS["Workspace databricks-homol (control plane)"]
+        NB["Notebook<br/>/Shared/homol/validate_bronze"]
+        JOB["Job<br/>databricks-homol-validate-bronze<br/>run_as pipeline SP"]
+        POLJ["Cluster policy<br/>databricks-homol-job-policy"]
+        POLI["Cluster policy<br/>databricks-homol-interactive-policy"]
+        SP["Service principal<br/>databricks-homol-pipeline"]
+        RS["Rule set servicePrincipal.user<br/>deployer + admin user"]
+    end
+
+    subgraph RUN["Only while a run is active (needs NAT)"]
+        subgraph CL["Job cluster - EC2 in the private subnets"]
+            DRV["Driver<br/>runs the notebook"]
+            WRK["Worker<br/>processes partitions"]
+        end
+    end
+
+    subgraph UC["Unity Catalog"]
+        LOC["External location<br/>databricks-homol-data-location"]
+        BR["homol_catalog.bronze.creditcard_raw"]
+    end
+
+    CSV[("S3 data bucket<br/>raw/creditcard/creditcard.csv")]
+
+    TF -->|uploads| NB
+    TF -->|creates| JOB
+    TF -->|creates| POLJ
+    TF -->|creates| POLI
+    TF -->|grants| RS
+    RS -.->|lets the deployer bind run_as| SP
+
+    SP -->|CAN_USE| POLJ
+    SP -->|CAN_USE| POLI
+    SP -->|CAN_MANAGE_RUN| JOB
+    SP -->|CAN_READ| NB
+
+    JOB -->|Run now: starts| CL
+    POLJ -->|limits type, size, mode| CL
+    JOB -->|attaches| NB
+    NB -->|executes on| DRV
+    DRV <-->|Spark tasks| WRK
+    WRK -->|READ_FILES via| LOC
+    LOC -->|covers| CSV
+    DRV -->|"USE SCHEMA, CREATE TABLE, MODIFY"| BR
+    CL -.->|run ends: cluster destroyed| JOB
+
+    classDef temp stroke-dasharray: 5 5,fill:#f2f2f2,stroke:#888,color:#555
+    class CL,DRV,WRK temp
+```
+
+Dashed grey boxes exist only during a run; everything else is permanent and costs nothing while idle.
+
+Run it (NAT must be on, because the cluster nodes need outbound access to the control plane):
+
+```bash
+cd infra/environments/homol
+terraform apply -var enable_nat=true
+# workspace > Jobs & Pipelines > databricks-homol-validate-bronze > Run now
+terraform apply -var enable_nat=false
+```
+
+Expected output of the task: `homol_catalog.bronze.creditcard_raw: 284807 rows, 492 frauds`; the table appears under **Catalog > homol_catalog > bronze**.
+
+Errors met while building this:
+- `Cannot bind the service principal provided in 'run_as'`: the job creator needs the `servicePrincipal.user` role on the SP, even an account admin. Fixed with the rule set above (`databricks_permissions` has no argument for service principals).
+- `The user '<sp-id>' does not have access to Databricks Workspace`: the SP needs the `workspace-access` entitlement (`workspace_access = true` on `databricks_service_principal`).
+- `UnauthorizedOperation ... ec2:ReplaceRoute` when turning the NAT on: the private route table is updated in place, so `terraform-network-policy` needs `ec2:ReplaceRoute` (added in 1.3).
 
 ## Troubleshooting notes
 
