@@ -71,7 +71,10 @@ Current state: the 4 workflow files exist but are empty and untracked (scaffolde
 - `terraform-apply-homol.yml`: push to `main` filtered by `infra/environments/homol/**` and `infra/modules/**`; `concurrency.group: terraform-homol`, `cancel-in-progress: false`; `environment: homol`.
 - `terraform-apply-prod.yml`: `environment: prod` (required reviewers), `workflow_dispatch` or `release/*` branch; never automatic from `main`.
 - `terraform-destroy-homol.yml`: `workflow_dispatch`, homol only.
-- Auth: OIDC role `github-actions-terraform` + `aws-actions/configure-aws-credentials`; Databricks secrets at environment level.
+- Auth: OIDC + `aws-actions/configure-aws-credentials`; Databricks secrets at environment level.
+- Decided 2026-10-10: stack `infra/ci-oidc` (applied by hand by an IAM admin, NOT by `terraform-deployer`, so CI can never create roles for itself) with one OIDC provider and one role per environment (`github-actions-terraform-homol`, `-prod`), each trusting only its own `sub` (`repo:OWNER/REPO:environment:<env>`). Role ARN goes in an `AWS_ROLE_ARN` environment variable.
+- Gates: homol applies on merge with no approval; prod apply needs the `prod` environment's required reviewer (self-review allowed). PR plans must not wait: homol plan uses env `homol`, prod plan uses env `prod-plan` (no reviewers, same secrets). The plan role has write permissions too (read-only role = future improvement). Branch protection requires the `terraform-plan` check but no review (GitHub forbids self-approval).
+- Needs `permissions: id-token: write` (and `pull-requests: write` for the plan comment) in the workflows. Replace the hardcoded `profile = "terraform-deployer"` with a variable (default null) before CI runs.
 
 ## Cost cheat sheet
 
@@ -80,7 +83,7 @@ NAT Gateway ~US$0.045/h, public IPv4 US$0.005/h, interface endpoints US$0.01/end
 ## Working style for this repo
 
 - User writes in Portuguese; repo docs, code, commits and these files are in English.
-- Commits follow conventional style (`feat(network): ...`, `docs: ...`); branch per feature (current: `feature/cluster-policies`, PR pending; earlier work merged via PRs #1-#5; main branch `main`). Always branch from updated `origin/main`.
+- Commits follow conventional style (`feat(network): ...`, `docs: ...`); branch per feature (current: `feature/github-oidc` (CI/CD, just created); earlier work merged via PRs #1-#7; main branch `main`). Always branch from updated `origin/main`.
 - Document every completed module in `README.md` (section numbering 3.x) and tick it in `PROGRESS.md`.
 
 ## Decisions log
@@ -92,9 +95,8 @@ NAT Gateway ~US$0.045/h, public IPv4 US$0.005/h, interface endpoints US$0.01/end
 
 ## Next session: where to start
 
-1. Commit/PR `feature/cluster-policies` (compute module, docs); branch from updated `origin/main` afterwards.
-2. CI/CD: OIDC provider + `github-actions-terraform` role (extend the deployer policy), GitHub Environments, secrets, then the 4 workflows in `.github/workflows/` (add `.github/` to git).
-3. OAuth secret for `databricks-homol-pipeline` (for Project 2 and CI), then prod environment.
-4. Project 2 pipeline (bronze -> silver -> gold, MLflow, export). NAT is OFF; turn it on only when a cluster will run (`-var enable_nat=true`), off afterwards.
+1. On `feature/github-oidc`: write `infra/ci-oidc` (confirm `owner/repo` from `git remote` and whether the repo is public or private), user applies it with an IAM admin profile. Then GitHub environments/secrets, then workflows. CI/CD: OIDC provider + `github-actions-terraform` role (extend the deployer policy), GitHub Environments, secrets, then the 4 workflows in `.github/workflows/` (add `.github/` to git).
+2. OAuth secret for `databricks-homol-pipeline` (for Project 2 and CI), then prod environment.
+3. Project 2 pipeline (bronze -> silver -> gold, MLflow, export). NAT is OFF; turn it on only when a cluster will run (`-var enable_nat=true`), off afterwards.
 - The trial expires about 2026-10-21; the user learns by checking AWS/Databricks consoles after each step, so tell them what to verify and where.
 - The user applies Terraform themselves (give them the commands); do not run `apply` unless asked.

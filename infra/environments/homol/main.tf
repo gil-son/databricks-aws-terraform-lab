@@ -15,7 +15,7 @@ terraform {
 
 provider "aws" {
   region  = "us-east-1"
-  profile = "terraform-deployer"
+  profile = var.aws_profile
 }
 
 module "network" {

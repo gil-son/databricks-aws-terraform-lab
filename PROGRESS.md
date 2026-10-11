@@ -29,7 +29,7 @@ Step-by-step plan for `databricks-aws-terraform-lab` (Project 1). Legend: `[x]` 
 - [x] Module outputs (`vpc_id`, `private_subnet_ids`, `security_group_id`, `nat_enabled`)
 - [x] Apply in homol with `enable_nat = false` and document (README 3.2)
 - [ ] Optional: VPC endpoints (S3 gateway, STS/Kinesis interface) behind a flag
-- [x] `enable_nat = true` applied for the workspace (NAT `nat-052076b3fa0e2d29f`). Turn off at the end of each session with `terraform apply -var enable_nat=false`. **Current state (end of session 2026-10-10): NAT OFF after the validation run**; turn it on again with `-var enable_nat=true` before running any cluster
+- [x] `enable_nat = true` applied for the workspace (NAT `nat-052076b3fa0e2d29f`). Turn off at the end of each session with `terraform apply -var enable_nat=false`. **Current state (end of session 2026-10-10): NAT OFF after the validation run, `describe-addresses` empty (EIP released, verified)**; turn it on again with `-var enable_nat=true` before running any cluster
 
 ## Phase 3 - IAM Databricks module
 - [x] Cross-account role + policy (Databricks data sources, `customer` policy type)
@@ -78,8 +78,11 @@ Step-by-step plan for `databricks-aws-terraform-lab` (Project 1). Legend: `[x]` 
 ## Phase 8 - CI/CD (GitHub Actions) - required; NEXT PRIORITY candidate
 
 Workflow files exist but are empty (structure sanity check only). Trial clock is running; needed to simulate homol -> prod (one AWS account, one workspace per environment).
-- [ ] Create GitHub OIDC provider and `github-actions-terraform` role in AWS (add permissions to the deployer policy)
-- [ ] Configure GitHub Environments: `homol` (no approval), `prod` (required reviewers)
+- [x] Design decided (2026-10-10, see CLAUDE.md): one OIDC provider per account, one role per environment (`github-actions-terraform-homol`, `-prod`), trust by `sub`; homol applies on merge with no approval, prod needs manual approval; plan on PRs never waits (`prod-plan` environment without reviewers)
+- [x] Write stack `infra/ci-oidc` (OIDC provider + 2 roles with the deployer policies attached); applied by hand with an IAM admin identity (9 resources, 2026-10-11), documented in README 3.8
+- [x] Parameterize the hardcoded AWS `profile` in `environments/homol/main.tf` (variable `aws_profile`, default null; removed from `backend.tf`, use `AWS_PROFILE` locally)
+- [ ] Configure GitHub Environments: `homol` (no approval), `prod-plan` (no approval, used by PR plans), `prod` (required reviewers, self-review allowed); add `AWS_ROLE_ARN` variable to each
+- [ ] Branch protection on `main`: require the `terraform-plan` check, no required review (solo repo cannot self-approve); may need a paid plan on private repos
 - [ ] Store Databricks credentials as environment secrets (`TF_VAR_databricks_*`)
 - [ ] Write `terraform-plan.yml` (PR, matrix homol/prod, fmt/init/validate/plan, PR comment) - file exists but is empty
 - [ ] Write `terraform-apply-homol.yml` (push to main, concurrency group, environment homol) - empty
@@ -117,5 +120,5 @@ Workflow files exist but are empty (structure sanity check only). Trial clock is
 - [x] workspace + unity-catalog modules merged (PRs #1-#4 incl. diagrams)
 - [x] `feature/data-bucket` merged (PR #5)
 - [x] Merge PR for `feature/uc-grants` (grants + docs)
-- [ ] Commit/PR for `feature/cluster-policies` (compute module, ReplaceRoute doc, SP entitlement)
+- [x] `feature/cluster-policies` merged (PR #7: compute module, ReplaceRoute doc, SP entitlement)
 - [ ] Keep this file and README updated after each module
