@@ -1042,7 +1042,7 @@ GitHub Actions authenticates to AWS with OIDC (short-lived tokens, no static key
 | `github-actions-terraform-prod` | Assumable only by the `prod` and `prod-plan` GitHub Environments |
 | 3 policy attachments per role | `terraform-bootstrap-s3-policy`, `terraform-network-policy`, `terraform-iam-databricks-policy` (same as the deployer role) |
 
-The trust policy checks `aud = sts.amazonaws.com` and `sub = repo:gil-son/databricks-aws-terraform-lab:environment:<env>`. A job therefore only gets a role if it declares the matching `environment:`; a job on another environment or repository is rejected.
+The trust policy checks `aud = sts.amazonaws.com` and `sub = repo:gil-son@72712095/databricks-aws-terraform-lab@1396238251:environment:<env>` (GitHub embeds the numeric owner and repository IDs in the claim; the plain `owner/name` form is rejected). A job therefore only gets a role if it declares the matching `environment:`; a job on another environment or repository is rejected.
 
 ```mermaid
 flowchart LR
