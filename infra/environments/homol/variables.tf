@@ -24,3 +24,9 @@ variable "admin_user_email" {
   description = "Human user (email) with full privileges on homol UC objects"
   type        = string
 }
+
+variable "aws_profile" {
+  description = "AWS CLI profile for local runs; null in CI (OIDC credentials come from the environment)"
+  type        = string
+  default     = null
+}
