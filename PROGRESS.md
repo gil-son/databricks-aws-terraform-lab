@@ -79,8 +79,8 @@ Step-by-step plan for `databricks-aws-terraform-lab` (Project 1). Legend: `[x]` 
 
 Workflow files exist but are empty (structure sanity check only). Trial clock is running; needed to simulate homol -> prod (one AWS account, one workspace per environment).
 - [x] Design decided (2026-10-10, see CLAUDE.md): one OIDC provider per account, one role per environment (`github-actions-terraform-homol`, `-prod`), trust by `sub`; homol applies on merge with no approval, prod needs manual approval; plan on PRs never waits (`prod-plan` environment without reviewers)
-- [ ] Write stack `infra/ci-oidc` (OIDC provider + 2 roles with the deployer policies attached); applied by hand with an IAM admin identity, not by `terraform-deployer`
-- [ ] Parameterize the hardcoded AWS `profile` in `environments/homol/main.tf` (variable, default null) so CI works without a profile
+- [x] Write stack `infra/ci-oidc` (OIDC provider + 2 roles with the deployer policies attached); applied by hand with an IAM admin identity (9 resources, 2026-10-11), documented in README 3.8
+- [x] Parameterize the hardcoded AWS `profile` in `environments/homol/main.tf` (variable `aws_profile`, default null; removed from `backend.tf`, use `AWS_PROFILE` locally)
 - [ ] Configure GitHub Environments: `homol` (no approval), `prod-plan` (no approval, used by PR plans), `prod` (required reviewers, self-review allowed); add `AWS_ROLE_ARN` variable to each
 - [ ] Branch protection on `main`: require the `terraform-plan` check, no required review (solo repo cannot self-approve); may need a paid plan on private repos
 - [ ] Store Databricks credentials as environment secrets (`TF_VAR_databricks_*`)

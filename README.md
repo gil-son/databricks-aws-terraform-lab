@@ -1031,6 +1031,72 @@ Errors met while building this:
 - `The user '<sp-id>' does not have access to Databricks Workspace`: the SP needs the `workspace-access` entitlement (`workspace_access = true` on `databricks_service_principal`).
 - `UnauthorizedOperation ... ec2:ReplaceRoute` when turning the NAT on: the private route table is updated in place, so `terraform-network-policy` needs `ec2:ReplaceRoute` (added in 1.3).
 
+### 3.8 CI identity: GitHub OIDC (`infra/ci-oidc`)
+
+GitHub Actions authenticates to AWS with OIDC (short-lived tokens, no static keys). This stack creates the identities CI uses, so it is **applied by hand with an IAM admin profile, never by `terraform-deployer` or by CI**: if the pipeline could edit its own roles, it could escalate its own privileges. Local state (git-ignored), like `bootstrap`.
+
+| Resource | Purpose |
+|---|---|
+| `aws_iam_openid_connect_provider.github` | Trusts `token.actions.githubusercontent.com` (one per account) |
+| `github-actions-terraform-homol` | Assumable only by the `homol` GitHub Environment |
+| `github-actions-terraform-prod` | Assumable only by the `prod` and `prod-plan` GitHub Environments |
+| 3 policy attachments per role | `terraform-bootstrap-s3-policy`, `terraform-network-policy`, `terraform-iam-databricks-policy` (same as the deployer role) |
+
+The trust policy checks `aud = sts.amazonaws.com` and `sub = repo:gil-son/databricks-aws-terraform-lab:environment:<env>`. A job therefore only gets a role if it declares the matching `environment:`; a job on another environment or repository is rejected.
+
+```mermaid
+flowchart LR
+    subgraph GH["GitHub Actions job"]
+        ENV["environment: homol / prod-plan / prod"]
+        TOK["OIDC token<br/>sub = repo:...:environment:ENV"]
+    end
+
+    subgraph AWS["AWS account"]
+        OIDC["OIDC provider<br/>token.actions.githubusercontent.com"]
+        RH["Role github-actions-terraform-homol"]
+        RP["Role github-actions-terraform-prod"]
+        POL["Policies: bootstrap-s3, network, iam-databricks"]
+        STATE[("S3 state bucket")]
+    end
+
+    ENV --> TOK
+    TOK -->|AssumeRoleWithWebIdentity| OIDC
+    OIDC -->|sub = environment:homol| RH
+    OIDC -->|"sub = environment:prod or prod-plan"| RP
+    RH --> POL
+    RP --> POL
+    POL --> STATE
+```
+
+Apply (needs an IAM admin profile, e.g. `admin-gilson`, whose access key should be deactivated afterwards):
+
+```bash
+cd infra/ci-oidc
+terraform init
+terraform apply -var aws_profile=admin-gilson   # 9 resources
+terraform output role_arns
+```
+
+GitHub side (Settings > Environments):
+
+| Environment | Reviewers | Variable `AWS_ROLE_ARN` |
+|---|---|---|
+| `homol` | none | `github-actions-terraform-homol` ARN |
+| `prod-plan` | none (PR plans must not wait) | `github-actions-terraform-prod` ARN |
+| `prod` | required reviewer (self-review allowed) | `github-actions-terraform-prod` ARN |
+
+Each environment also holds the secrets `TF_VAR_databricks_account_id`, `TF_VAR_databricks_client_id`, `TF_VAR_databricks_client_secret` and `TF_VAR_admin_user_email`. Names must start with `TF_VAR_` so Terraform picks them up. Restrict deployment branches (`homol`: `main`; `prod`: `main` and `release/*`). Wait timers are not used: homol applies on merge, and prod already has a reviewer gate.
+
+**Local runs without a hardcoded profile.** `environments/homol` no longer hardcodes the AWS profile: the provider uses `var.aws_profile` (default `null`, set to `terraform-deployer` in the git-ignored `terraform.tfvars`). The backend cannot read variables, so locally export the profile before `init`/`plan`/`apply`:
+
+```bash
+export AWS_PROFILE=terraform-deployer
+```
+
+After removing `profile` from `backend.tf`, run `terraform init -reconfigure` once (same bucket and key, no state migration).
+
+Verify: IAM > Identity providers lists `token.actions.githubusercontent.com`; IAM > Roles > `github-actions-terraform-homol` > Trust relationships shows the `sub` condition.
+
 ## Troubleshooting notes
 
 - **Resource marked as `tainted`:** happens when a create/update call is partially accepted by AWS but Terraform can't confirm the final state (often a missing `Get*` IAM permission right after a `Put*`/`Create*` call). Fix the underlying permission, confirm the resource is correct outside Terraform (console or `aws s3api ...` / `aws ec2 describe-...`), then run `terraform untaint <resource>` — never force a destroy/recreate on a resource you haven't verified.
