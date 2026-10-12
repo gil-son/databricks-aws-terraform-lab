@@ -33,7 +33,8 @@ infra/
   environments/
     homol/              main.tf, variables.tf, outputs.tf, backend.tf (in use; two databricks providers: account + alias `workspace`)
     prod/               backend.tf, main.tf EMPTY files
-.github/workflows/      4 EMPTY files: terraform-plan, terraform-apply-homol, terraform-apply-prod, terraform-destroy-homol (untracked in git)
+  ci-oidc/              OIDC provider + github-actions-terraform-{homol,prod} roles, local state, applied by hand with an IAM admin profile (DONE, applied 2026-10-11)
+.github/workflows/      terraform-plan.yml and terraform-apply-homol.yml DONE (tracked); terraform-apply-prod.yml, terraform-destroy-homol.yml still empty and untracked
 ```
 
 Module wiring: environments call modules; module outputs feed later modules.
@@ -63,9 +64,9 @@ Module wiring: environments call modules; module outputs feed later modules.
 - **The trial is ALREADY ACTIVE** (started before the Terraform/CI work was finished, because Databricks changed its platform requirements). The original "do not activate until everything is written" rule no longer applies; the clock is running, so Done so far: NAT on, workspace, Unity Catalog in homol. Next: cluster policies/validation job and CI/CD. 13 days remained on 2026-10-08 (expires about 2026-10-21).
 - Day-by-day plan is in `PROGRESS.md` (Phase 10), counted from the real activation date.
 
-## CI/CD design (to implement; GitHub Actions is required)
+## CI/CD design (homol implemented; prod pending)
 
-Current state: the 4 workflow files exist but are empty and untracked (scaffolded only as a sanity check); real content is still to be written. Envs are simulated in one AWS account with one workspace per environment.
+Current state: `terraform-plan.yml` (PR) and `terraform-apply-homol.yml` (merge + manual run) work end to end for homol. `apply-prod` and `destroy-homol` are empty and untracked. Envs are simulated in one AWS account with one workspace per environment.
 
 - `terraform-plan.yml`: on PR touching `infra/**`, matrix [homol, prod]; fmt -check, init, validate, plan, post plan as PR comment.
 - `terraform-apply-homol.yml`: push to `main` filtered by `infra/environments/homol/**` and `infra/modules/**`; `concurrency.group: terraform-homol`, `cancel-in-progress: false`; `environment: homol`.
@@ -74,7 +75,10 @@ Current state: the 4 workflow files exist but are empty and untracked (scaffolde
 - Auth: OIDC + `aws-actions/configure-aws-credentials`; Databricks secrets at environment level.
 - Decided 2026-10-10: stack `infra/ci-oidc` (applied by hand by an IAM admin, NOT by `terraform-deployer`, so CI can never create roles for itself) with one OIDC provider and one role per environment (`github-actions-terraform-homol`, `-prod`), each trusting only its own `sub` (`repo:OWNER/REPO:environment:<env>`). Role ARN goes in an `AWS_ROLE_ARN` environment variable.
 - Gates: homol applies on merge with no approval; prod apply needs the `prod` environment's required reviewer (self-review allowed). PR plans must not wait: homol plan uses env `homol`, prod plan uses env `prod-plan` (no reviewers, same secrets). The plan role has write permissions too (read-only role = future improvement). Branch protection requires the `terraform-plan` check but no review (GitHub forbids self-approval).
-- Needs `permissions: id-token: write` (and `pull-requests: write` for the plan comment) in the workflows. Replace the hardcoded `profile = "terraform-deployer"` with a variable (default null) before CI runs.
+- Needs `permissions: id-token: write` (and `pull-requests: write` for the plan comment) in the workflows. Done: `profile` is now `var.aws_profile` (default null, set in the git-ignored tfvars); removed from `backend.tf`, so locally `export AWS_PROFILE=terraform-deployer` before `init`/`plan`/`apply`.
+- Implemented 2026-10-11/12 (README 3.8 and 3.9): trust `sub` is `repo:gil-son@72712095/databricks-aws-terraform-lab@1396238251:environment:<env>` (GitHub embeds owner and repo IDs; the plain `owner/name` form is rejected). CI uses Terraform `~1.16`; backend `use_lockfile` needs >= 1.10. `fmt -check` covers the whole `infra/` tree: run `terraform fmt -recursive infra` before pushing. `plan -lock=false` on PRs; apply runs `plan -out` then `apply tfplan`.
+- NAT in CI: push to `main` always applies with `enable_nat=false`; to turn it on run Actions > terraform-apply-homol > Run workflow with the `enable_nat` box ticked. Merging an `infra/` change while the NAT is on turns it off.
+- The check name for branch protection is `plan (homol)` (job name), not `terraform-plan`.
 
 ## Cost cheat sheet
 
@@ -83,7 +87,7 @@ NAT Gateway ~US$0.045/h, public IPv4 US$0.005/h, interface endpoints US$0.01/end
 ## Working style for this repo
 
 - User writes in Portuguese; repo docs, code, commits and these files are in English.
-- Commits follow conventional style (`feat(network): ...`, `docs: ...`); branch per feature (current: `feature/github-oidc` (CI/CD, just created); earlier work merged via PRs #1-#7; main branch `main`). Always branch from updated `origin/main`.
+- Commits follow conventional style (`feat(network): ...`, `docs: ...`); branch per feature (earlier work merged via PRs #1-#11; main branch `main`). Always branch from updated `origin/main`, and keep only one open PR per branch (a stale PR from an already-merged branch once carried a broken workflow into `main`).
 - Document every completed module in `README.md` (section numbering 3.x) and tick it in `PROGRESS.md`.
 
 ## Decisions log
@@ -95,8 +99,9 @@ NAT Gateway ~US$0.045/h, public IPv4 US$0.005/h, interface endpoints US$0.01/end
 
 ## Next session: where to start
 
-1. On `feature/github-oidc`: write `infra/ci-oidc` (confirm `owner/repo` from `git remote` and whether the repo is public or private), user applies it with an IAM admin profile. Then GitHub environments/secrets, then workflows. CI/CD: OIDC provider + `github-actions-terraform` role (extend the deployer policy), GitHub Environments, secrets, then the 4 workflows in `.github/workflows/` (add `.github/` to git).
-2. OAuth secret for `databricks-homol-pipeline` (for Project 2 and CI), then prod environment.
-3. Project 2 pipeline (bronze -> silver -> gold, MLflow, export). NAT is OFF; turn it on only when a cluster will run (`-var enable_nat=true`), off afterwards.
+1. Housekeeping from the CI work: rotate the `terraform-deployer` OAuth secret (it was pasted in a chat), revoke the GitHub token embedded in the `origin` URL and use a clean URL, branch protection requiring `plan (homol)`, deactivate the `admin-gilson` access key (only needed to re-apply `infra/ci-oidc`).
+2. OAuth secret for `databricks-homol-pipeline` (for Project 2 bundle workflows), stored as a `homol` environment secret.
+3. Project 2 pipeline (bronze -> silver -> gold, MLflow, export). NAT is OFF by default; turn it on only when a cluster will run (Run workflow with `enable_nat`, or `-var enable_nat=true`), off afterwards.
+4. Prod environment (`main.tf`, `backend.tf`, per-env tfvars, parameterize the hardcoded `"homol"`), then enable the prod entry in the `terraform-plan.yml` matrix and write `terraform-apply-prod.yml` and `terraform-destroy-homol.yml`.
 - The trial expires about 2026-10-21; the user learns by checking AWS/Databricks consoles after each step, so tell them what to verify and where.
 - The user applies Terraform themselves (give them the commands); do not run `apply` unless asked.
