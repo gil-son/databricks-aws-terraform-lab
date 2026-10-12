@@ -1103,7 +1103,7 @@ Plans run on pull requests and applies run after the merge, always through the O
 
 | Workflow | Trigger | GitHub Environment | What it does |
 |---|---|---|---|
-| `terraform-plan.yml` | Pull request touching `infra/environments/**`, `infra/modules/**` or the workflow itself | `homol` (and `prod-plan` for prod, currently disabled in the matrix) | `fmt -check` on the whole `infra/` tree, `init`, `validate`, `plan -lock=false`, posts the plan as a PR comment (updated in place) |
+| `terraform-plan.yml` | Every pull request (no `paths` filter, because `plan (homol)` is a required status check) | `homol` (and `prod-plan` for prod, currently disabled in the matrix) | `fmt -check` on the whole `infra/` tree, `init`, `validate`, `plan -lock=false`, posts the plan as a PR comment (updated in place) |
 | `terraform-apply-homol.yml` | Push to `main` touching `infra/environments/homol/**`, `infra/modules/**` or the workflow; or manual run | `homol` | `init`, `validate`, `plan -out=tfplan`, `apply tfplan` |
 | `terraform-apply-prod.yml` | Not written yet | `prod` (required reviewer) | Waits for prod to exist (Phase 7) |
 | `terraform-destroy-homol.yml` | Not written yet | `homol` | Manual, homol only |
