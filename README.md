@@ -1097,6 +1097,47 @@ After removing `profile` from `backend.tf`, run `terraform init -reconfigure` on
 
 Verify: IAM > Identity providers lists `token.actions.githubusercontent.com`; IAM > Roles > `github-actions-terraform-homol` > Trust relationships shows the `sub` condition.
 
+### 3.9 CI workflows (`.github/workflows`)
+
+Plans run on pull requests and applies run after the merge, always through the OIDC roles of 3.8. Both workflows install Terraform `~1.16` (the S3 backend uses `use_lockfile`, which needs 1.10 or later) and take the Databricks credentials from the environment secrets.
+
+| Workflow | Trigger | GitHub Environment | What it does |
+|---|---|---|---|
+| `terraform-plan.yml` | Pull request touching `infra/environments/**`, `infra/modules/**` or the workflow itself | `homol` (and `prod-plan` for prod, currently disabled in the matrix) | `fmt -check` on the whole `infra/` tree, `init`, `validate`, `plan -lock=false`, posts the plan as a PR comment (updated in place) |
+| `terraform-apply-homol.yml` | Push to `main` touching `infra/environments/homol/**`, `infra/modules/**` or the workflow; or manual run | `homol` | `init`, `validate`, `plan -out=tfplan`, `apply tfplan` |
+| `terraform-apply-prod.yml` | Not written yet | `prod` (required reviewer) | Waits for prod to exist (Phase 7) |
+| `terraform-destroy-homol.yml` | Not written yet | `homol` | Manual, homol only |
+
+```mermaid
+flowchart LR
+    DEV["git push feature branch"] --> PR["Pull request"]
+    PR -->|"paths: infra/**"| PLAN["terraform-plan<br/>env homol<br/>fmt, init, validate, plan"]
+    PLAN -->|comment| PR
+    PR -->|merge| MAIN["main"]
+    MAIN -->|"paths: homol or modules"| APPLY["terraform-apply-homol<br/>env homol<br/>plan -out, apply"]
+    MANUAL["Run workflow<br/>input enable_nat"] --> APPLY
+    PLAN -.->|OIDC| ROLE["Role github-actions-terraform-homol"]
+    APPLY -.->|OIDC| ROLE
+    ROLE --> STATE[("S3 state + AWS + Databricks")]
+```
+
+Design points:
+- **Plan never holds the lock.** `plan -lock=false` on PRs, so a plan can never block a merge apply. The apply uses the normal lock.
+- **One apply at a time.** `concurrency: terraform-homol` with `cancel-in-progress: false`: a second run waits instead of cancelling the first.
+- **The apply runs exactly the reviewed plan** (`plan -out` then `apply tfplan`), not a blind `-auto-approve`.
+- **Manual runs only from `main`** (`if: github.ref == 'refs/heads/main'`), so a feature branch cannot touch homol.
+- **NAT toggle.** A push to `main` always applies with `enable_nat=false`, so the cost returns to zero by itself. To turn the NAT on, run **Actions > terraform-apply-homol > Run workflow** and tick `enable_nat`; run it again unticked (or merge any change under `infra/`) to turn it off. Merging an `infra/` change while the NAT is on turns it off, so avoid that during a cluster session.
+- **`environment:` is mandatory in every job** that uses AWS: the role trust is checked against the `environment:<name>` part of the token.
+
+Errors met while building this:
+- **Invalid workflow file (YAML line 73):** a pasted block duplicated lines inside the plan step. Validate locally with `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/terraform-plan.yml'))"` before pushing.
+- **`Could not assume role with OIDC: Not authorized to perform sts:AssumeRoleWithWebIdentity`:** GitHub now puts the numeric IDs in the subject claim: `repo:gil-son@<ownerId>/<repo>@<repoId>:environment:<env>`. The trust policy built from `owner/name` never matched. Found by printing the claims in a temporary step (decode the middle part of the token from `ACTIONS_ID_TOKEN_REQUEST_URL`), fixed in `infra/ci-oidc` (3.8). After a trust change, the first runs can still fail for a minute or two until IAM propagates.
+- **`Unsupported argument: use_lockfile` in `terraform init`:** the runner had Terraform 1.9. Pinned to `~1.16` and `required_version = ">= 1.10"` in homol.
+- **`fmt -check` failing on `infra/bootstrap/main.tf`:** two comments inside the `terraform {}` block were not indented. CI checks the whole tree, so run `terraform fmt -recursive infra` before every push.
+- **Wrong PR merged:** a PR opened from an already-merged branch carried the broken workflow into `main`. Open one PR per branch, and branch from the updated `origin/main` each time.
+
+Not done yet: branch protection requiring the `plan (homol)` check (the check is named after the job, not after the file), `apply-prod` and `destroy-homol`, enabling the prod entry in the plan matrix, and committing `.terraform.lock.hcl` so CI uses the same provider versions as local runs.
+
 ## Troubleshooting notes
 
 - **Resource marked as `tainted`:** happens when a create/update call is partially accepted by AWS but Terraform can't confirm the final state (often a missing `Get*` IAM permission right after a `Put*`/`Create*` call). Fix the underlying permission, confirm the resource is correct outside Terraform (console or `aws s3api ...` / `aws ec2 describe-...`), then run `terraform untaint <resource>` — never force a destroy/recreate on a resource you haven't verified.

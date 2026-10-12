@@ -75,21 +75,24 @@ Step-by-step plan for `databricks-aws-terraform-lab` (Project 1). Legend: `[x]` 
 - [ ] Per-environment tfvars; parameterize hardcoded `"homol"` and AWS profile
 - [x] Decision: prod gets its own workspace, VPC/NAT and `prod_catalog` (same account, separate state); shared metastore. Apply prod only when CI/CD is ready (duplicates NAT cost)
 
-## Phase 8 - CI/CD (GitHub Actions) - required; NEXT PRIORITY candidate
+## Phase 8 - CI/CD (GitHub Actions) - homol DONE, prod pending
 
-Workflow files exist but are empty (structure sanity check only). Trial clock is running; needed to simulate homol -> prod (one AWS account, one workspace per environment).
+Plan on PRs and apply on merge work end to end for homol (README 3.8 and 3.9). Prod workflows wait for the prod environment (Phase 7).
 - [x] Design decided (2026-10-10, see CLAUDE.md): one OIDC provider per account, one role per environment (`github-actions-terraform-homol`, `-prod`), trust by `sub`; homol applies on merge with no approval, prod needs manual approval; plan on PRs never waits (`prod-plan` environment without reviewers)
 - [x] Write stack `infra/ci-oidc` (OIDC provider + 2 roles with the deployer policies attached); applied by hand with an IAM admin identity (9 resources, 2026-10-11), documented in README 3.8
 - [x] Parameterize the hardcoded AWS `profile` in `environments/homol/main.tf` (variable `aws_profile`, default null; removed from `backend.tf`, use `AWS_PROFILE` locally)
-- [ ] Configure GitHub Environments: `homol` (no approval), `prod-plan` (no approval, used by PR plans), `prod` (required reviewers, self-review allowed); add `AWS_ROLE_ARN` variable to each
+- [x] GitHub Environments created with `AWS_ROLE_ARN` variable and `TF_VAR_*` secrets (2026-10-11); `homol` verified end to end. Pending check: `prod-plan` and `prod` (reviewer, deployment branches) once prod is enabled
 - [ ] Branch protection on `main`: require the `terraform-plan` check, no required review (solo repo cannot self-approve); may need a paid plan on private repos
-- [ ] Store Databricks credentials as environment secrets (`TF_VAR_databricks_*`)
-- [ ] Write `terraform-plan.yml` (PR, matrix homol/prod, fmt/init/validate/plan, PR comment) - file exists but is empty
-- [ ] Write `terraform-apply-homol.yml` (push to main, concurrency group, environment homol) - empty
+- [x] Databricks credentials stored as environment secrets (`TF_VAR_databricks_*`, `TF_VAR_admin_user_email`)
+- [ ] Rotate the `terraform-deployer` OAuth secret (it was pasted in a chat on 2026-10-11) in the account console and update `terraform.tfvars` and the GitHub secrets
+- [x] `terraform-plan.yml` (PR, fmt/init/validate/plan, PR comment); prod entry of the matrix commented out until prod exists (PR #9)
+- [x] `terraform-apply-homol.yml` (push to main + manual run with `enable_nat` input, concurrency group, environment homol); first run on merge: No changes (PR #11, 2026-10-12)
 - [ ] Write `terraform-apply-prod.yml` (workflow_dispatch / release branch, environment prod) - empty
 - [ ] Write `terraform-destroy-homol.yml` (workflow_dispatch, homol only) - empty
-- [ ] Validate `terraform-plan.yml` with test PRs
-- [ ] Commit `.github/` (currently untracked)
+- [x] `terraform-plan.yml` validated on PR #9: OIDC assume, init on remote state, plan No changes, PR comment
+- [x] `.github/` committed (plan and apply-homol); `apply-prod` and `destroy-homol` are still empty and untracked
+- [ ] Commit `.terraform.lock.hcl` (currently git-ignored, so CI resolves the latest providers in range)
+- [ ] Pipeline SP OAuth secret as a `homol` environment secret (needed by Project 2 bundle workflows)
 
 ## Phase 9 - Quality checklist (trial already active; not a blocker)
 - [ ] All modules pass `terraform fmt` / `validate`
@@ -101,7 +104,7 @@ Workflow files exist but are empty (structure sanity check only). Trial clock is
 
 ## Phase 10 - Trial execution (trial ACTIVE, 13 days left on 2026-10-08, expires about 2026-10-21)
 - [x] Network + IAM applied, homol workspace created and accessible
-- [ ] Run `terraform-apply-homol.yml` end to end
+- [x] Run `terraform-apply-homol.yml` end to end (merge of PR #11, plus a manual run toggling the NAT)
 - [x] Catalogs/schemas in homol
 - [x] Cluster policies and validation job (homol)
 - [ ] Run Project 2 pipeline on the workspace, test homol -> prod promotion with manual approval
