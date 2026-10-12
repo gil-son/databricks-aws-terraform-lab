@@ -1,11 +1,9 @@
 name: terraform-plan
 
+# No paths filter on purpose: `plan (homol)` is a required status check, and a required check
+# that never runs (e.g. a docs-only PR) would block the merge forever.
 on:
   pull_request:
-    paths:
-      - "infra/environments/**"
-      - "infra/modules/**"
-      - ".github/workflows/terraform-plan.yml"
 
 permissions:
   id-token: write       # OIDC token for AWS
