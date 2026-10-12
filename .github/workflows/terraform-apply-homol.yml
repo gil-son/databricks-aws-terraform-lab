@@ -1,0 +1,74 @@
+name: terraform-apply-homol
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/environments/homol/**"
+      - "infra/modules/**"
+      - ".github/workflows/terraform-apply-homol.yml"
+  workflow_dispatch:
+    inputs:
+      enable_nat:
+        description: "Turn the NAT Gateway on (about US$0.05/h). Turn it off again before ending the day."
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write # OIDC token for AWS
+  contents: read
+
+# Never two applies on the same state; a queued run waits instead of cancelling the running one
+concurrency:
+  group: terraform-homol
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    # Manual runs from other branches must not touch homol
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: homol
+    defaults:
+      run:
+        working-directory: infra/environments/homol
+    env:
+      TF_VAR_databricks_account_id: ${{ secrets.TF_VAR_databricks_account_id }}
+      TF_VAR_databricks_client_id: ${{ secrets.TF_VAR_databricks_client_id }}
+      TF_VAR_databricks_client_secret: ${{ secrets.TF_VAR_databricks_client_secret }}
+      TF_VAR_admin_user_email: ${{ secrets.TF_VAR_admin_user_email }}
+      # Push to main always applies with the NAT off (cost); only a manual run can turn it on
+      TF_VAR_enable_nat: ${{ github.event_name == 'workflow_dispatch' && inputs.enable_nat || false }}
+      TF_IN_AUTOMATION: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.16"
+          terraform_wrapper: false
+
+      - name: init
+        run: terraform init -input=false
+
+      - name: validate
+        run: terraform validate -no-color
+
+      - name: plan
+        run: terraform plan -input=false -no-color -out=tfplan
+
+      - name: apply
+        run: terraform apply -input=false -no-color tfplan
+
+      - name: summary
+        if: always()
+        run: |
+          echo "### terraform-apply-homol" >> "$GITHUB_STEP_SUMMARY"
+          echo "- enable_nat: \`${TF_VAR_enable_nat}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- result: \`${{ job.status }}\`" >> "$GITHUB_STEP_SUMMARY"
