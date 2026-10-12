@@ -7,8 +7,8 @@ terraform {
       version = "~> 5.0"
     }
   }
-# No backend.tf here, by design — this module uses LOCAL state
-# Runs once, on your machine, and is never reapplied
+  # No backend.tf here, by design — this module uses LOCAL state
+  # Runs once, on your machine, and is never reapplied
 }
 
 provider "aws" {

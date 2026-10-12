@@ -22,7 +22,7 @@ jobs:
         include:
           # prod uses the reviewer-free "prod-plan" GitHub Environment so PRs never wait
           - { environment: homol, gh_environment: homol }
-          - { environment: prod, gh_environment: prod-plan }
+          # - { environment: prod, gh_environment: prod-plan }  # enable when prod exists (Phase 7)
     environment: ${{ matrix.gh_environment }}
     concurrency:
       group: terraform-plan-${{ matrix.environment }}-${{ github.ref }}
@@ -47,7 +47,7 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "~1.9"
+          terraform_version: "~1.16"
           terraform_wrapper: false
 
       - name: fmt
@@ -63,15 +63,6 @@ jobs:
         id: plan
         # -lock=false: a PR plan must never hold the state lock that a merge apply needs
         run: |
-          set +e
-          terraform plan -input=false -no-color -lock=false -detailed-exitcode -out=tfplan > plan.txt 2>&1
-          code=$?
-          echo "exitcode=$code" >> "$GITHUB_OUTPUT"
-          cat plan.txt
-          # 0 = no changes, 2 = changes; only 1 is an error
-          if [ "$code" -eq 1 ]; then exit 1; fi
-
-      - name: comment plan on PR
           set +e
           terraform plan -input=false -no-color -lock=false -detailed-exitcode -out=tfplan > plan.txt 2>&1
           code=$?
