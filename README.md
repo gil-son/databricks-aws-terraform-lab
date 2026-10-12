@@ -1136,7 +1136,9 @@ Errors met while building this:
 - **`fmt -check` failing on `infra/bootstrap/main.tf`:** two comments inside the `terraform {}` block were not indented. CI checks the whole tree, so run `terraform fmt -recursive infra` before every push.
 - **Wrong PR merged:** a PR opened from an already-merged branch carried the broken workflow into `main`. Open one PR per branch, and branch from the updated `origin/main` each time.
 
-Not done yet: branch protection requiring the `plan (homol)` check (the check is named after the job, not after the file), `apply-prod` and `destroy-homol`, enabling the prod entry in the plan matrix, and committing `.terraform.lock.hcl` so CI uses the same provider versions as local runs.
+**Branch protection.** The ruleset `be-free-if-status-green` on `main` requires a pull request (0 approvals, since the author cannot approve their own PR in a solo repo) and the status check `plan (homol)` (named after the job, not the file); it also blocks deletions and force pushes. That is why the plan workflow has no `paths` filter: a required check that never runs would block docs-only PRs forever.
+
+Not done yet: `apply-prod` and `destroy-homol`, enabling the prod entry in the plan matrix (and adding `plan (prod)` to the required checks), and committing `.terraform.lock.hcl` so CI uses the same provider versions as local runs.
 
 ## Troubleshooting notes
 
