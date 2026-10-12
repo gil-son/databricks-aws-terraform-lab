@@ -29,7 +29,7 @@ Step-by-step plan for `databricks-aws-terraform-lab` (Project 1). Legend: `[x]` 
 - [x] Module outputs (`vpc_id`, `private_subnet_ids`, `security_group_id`, `nat_enabled`)
 - [x] Apply in homol with `enable_nat = false` and document (README 3.2)
 - [ ] Optional: VPC endpoints (S3 gateway, STS/Kinesis interface) behind a flag
-- [x] `enable_nat = true` applied for the workspace (NAT `nat-052076b3fa0e2d29f`). Turn off at the end of each session with `terraform apply -var enable_nat=false`. **Current state (end of session 2026-10-10): NAT OFF after the validation run, `describe-addresses` empty (EIP released, verified)**; turn it on again with `-var enable_nat=true` before running any cluster
+- [x] `enable_nat = true` applied for the workspace (NAT `nat-052076b3fa0e2d29f`). Turn off at the end of each session with `terraform apply -var enable_nat=false`. **Current state (2026-10-12): NAT OFF, verified with `describe-nat-gateways` and `describe-addresses` (both empty) after testing the `enable_nat` toggle in `terraform-apply-homol`**; turn it on again (Run workflow with `enable_nat` ticked, or `-var enable_nat=true`) before running any cluster
 
 ## Phase 3 - IAM Databricks module
 - [x] Cross-account role + policy (Databricks data sources, `customer` policy type)
@@ -82,7 +82,8 @@ Plan on PRs and apply on merge work end to end for homol (README 3.8 and 3.9). P
 - [x] Write stack `infra/ci-oidc` (OIDC provider + 2 roles with the deployer policies attached); applied by hand with an IAM admin identity (9 resources, 2026-10-11), documented in README 3.8
 - [x] Parameterize the hardcoded AWS `profile` in `environments/homol/main.tf` (variable `aws_profile`, default null; removed from `backend.tf`, use `AWS_PROFILE` locally)
 - [x] GitHub Environments created with `AWS_ROLE_ARN` variable and `TF_VAR_*` secrets (2026-10-11); `homol` verified end to end. Pending check: `prod-plan` and `prod` (reviewer, deployment branches) once prod is enabled
-- [ ] Branch protection on `main`: require the `terraform-plan` check, no required review (solo repo cannot self-approve); may need a paid plan on private repos
+- [x] Branch protection on `main` via ruleset `be-free-if-status-green` (2026-10-12): PR required with 0 approvals, `plan (homol)` must pass, deletions and force pushes blocked. `terraform-plan.yml` has no `paths` filter so docs-only PRs are not blocked (PR #13)
+- [ ] When prod exists: add `plan (prod)` to the required checks
 - [x] Databricks credentials stored as environment secrets (`TF_VAR_databricks_*`, `TF_VAR_admin_user_email`)
 - [ ] Rotate the `terraform-deployer` OAuth secret (it was pasted in a chat on 2026-10-11) in the account console and update `terraform.tfvars` and the GitHub secrets
 - [x] `terraform-plan.yml` (PR, fmt/init/validate/plan, PR comment); prod entry of the matrix commented out until prod exists (PR #9)
@@ -102,7 +103,10 @@ Plan on PRs and apply on merge work end to end for homol (README 3.8 and 3.9). P
 - [ ] Service principal and credentials organized
 - [ ] AWS Budgets alert active
 
-## Phase 10 - Trial execution (trial ACTIVE, 13 days left on 2026-10-08, expires about 2026-10-21)
+## Phase 10 - Trial execution (trial ACTIVE, 8 days left on 2026-10-13, expires about 2026-10-21)
+- [x] Decision 2026-10-12: Project 1 is functionally ready for Project 2 (homol platform + homol CI). Do Project 2 next and come back to prod, `apply-prod`, promotion and `destroy-homol` in the **last 3-4 days of the trial** (prod duplicates the NAT cost, and `destroy` must happen before the trial ends)
+- [x] NAT verified OFF on 2026-10-12 (no NAT gateway, no Elastic IP)
+- [ ] AWS Budgets alert (do before the first cluster runs)
 - [x] Network + IAM applied, homol workspace created and accessible
 - [x] Run `terraform-apply-homol.yml` end to end (merge of PR #11, plus a manual run toggling the NAT)
 - [x] Catalogs/schemas in homol
