@@ -116,9 +116,11 @@ Plan on PRs and apply on merge work end to end for homol (README 3.8 and 3.9). P
 - [ ] Day 13-14: `terraform destroy` (or move to paid account); verify NAT, endpoints, EC2 removed; review AWS and Databricks billing; consolidate docs into README/post
 
 ## Phase 11 - Integration with Project 2 (SageMaker)
-- [ ] Expose workspace URL, catalog/schema names and S3 prefixes as outputs/docs for Project 2
-- [ ] Add IAM role/policy for SageMaker access to `export/gold/creditcard/` (and training/endpoint permissions for OIDC role)
-- [ ] Reuse OIDC and environment secrets for Project 2 workflows (`databricks-pipeline-*`, `sagemaker-train-deploy`, `sagemaker-teardown`)
+- [x] Project 2 repository created (`databricks-sagemaker-fraud-pipeline`, scaffold with Asset Bundle and notebooks 01-05, 2026-10-12); contract documented in README 3.10
+- [x] Workspace URL, catalog/schema names and S3 prefixes documented for Project 2 (README 3.10)
+- [ ] Add IAM role/policy for SageMaker access to `export/gold/creditcard/` (and training/endpoint permissions), plus a CI role in `infra/ci-oidc` that trusts the Project 2 repo `sub` (`repo:gil-son@72712095/databricks-sagemaker-fraud-pipeline@<repoId>:environment:<env>`)
+- [ ] Optional: `CREATE_MODEL` grant for the pipeline SP if models are registered in Unity Catalog
+- [ ] Create the OAuth secret for `databricks-homol-pipeline`; reuse OIDC and environment secrets for Project 2 workflows (`databricks-pipeline-*`, `sagemaker-train-deploy`, `sagemaker-teardown`)
 - [ ] Run Project 2 end to end: Delta bronze/silver/gold -> MLflow -> Parquet export -> SageMaker training -> endpoint -> delete endpoint
 
 ## Housekeeping

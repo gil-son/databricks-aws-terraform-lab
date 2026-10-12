@@ -1140,6 +1140,24 @@ Errors met while building this:
 
 Not done yet: `apply-prod` and `destroy-homol`, enabling the prod entry in the plan matrix (and adding `plan (prod)` to the required checks), and committing `.terraform.lock.hcl` so CI uses the same provider versions as local runs.
 
+### 3.10 Project 2 repository
+
+The data and model code lives in a separate repository, [`databricks-sagemaker-fraud-pipeline`](https://github.com/gil-son/databricks-sagemaker-fraud-pipeline) (Spark -> Delta -> MLflow -> Parquet export -> SageMaker). It consumes this platform through a fixed contract:
+
+| Provided here | Used by Project 2 |
+|---|---|
+| Workspace `databricks-homol` | Host of the Asset Bundle target `homol` |
+| `homol_catalog` with `bronze`, `silver`, `gold` and the grants of 3.5.2 | Pipeline tables (`creditcard_raw`, `creditcard_clean`, `creditcard_features`) |
+| Service principal `databricks-homol-pipeline` | `run_as` of the Workflow (least privilege) |
+| Cluster policy `databricks-homol-job-policy` | Job cluster of the Workflow (id in `databricks.yml`) |
+| Data bucket `raw/creditcard/` and `export/gold/creditcard/` | Input CSV and Parquet export read by SageMaker |
+| NAT toggle in `terraform-apply-homol` | Must be on while the Workflow runs |
+
+Things Project 2 needs that are **not done in this repository yet**:
+- An OAuth secret for the pipeline service principal (stored in the Project 2 repo as `homol` Environment secrets).
+- `CREATE_MODEL` on a schema for the pipeline principal, only if models are registered in Unity Catalog.
+- An IAM role for SageMaker (read `export/gold/creditcard/`, training, endpoint) and a CI role that trusts the Project 2 repository. The roles of 3.8 trust only this repository, because the OIDC `sub` includes the repository name and ID.
+
 ## Troubleshooting notes
 
 - **Resource marked as `tainted`:** happens when a create/update call is partially accepted by AWS but Terraform can't confirm the final state (often a missing `Get*` IAM permission right after a `Put*`/`Create*` call). Fix the underlying permission, confirm the resource is correct outside Terraform (console or `aws s3api ...` / `aws ec2 describe-...`), then run `terraform untaint <resource>` — never force a destroy/recreate on a resource you haven't verified.

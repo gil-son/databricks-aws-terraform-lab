@@ -7,7 +7,7 @@ Track status in `PROGRESS.md`. Detailed setup/troubleshooting docs live in `READ
 
 **Project 1** of two linked projects: `databricks-aws-terraform-lab` provisions the **platform** (Databricks workspace on AWS, Unity Catalog, cluster policies) with modular Terraform and promotes it across `homol` -> `prod` via GitHub Actions. No model code here.
 
-**Project 2** (separate repo/briefing: `../projeto-2-databricks-sagemaker.md`) runs **on top of** this platform: Spark -> Delta Lake -> MLflow -> Parquet export to S3 -> SageMaker training/endpoint. Original briefs (Portuguese) are in the parent directory: `../projeto-1-databricks-terraform-cicd.md`, `../projeto-2-databricks-sagemaker.md`.
+**Project 2** (separate repo `../databricks-sagemaker-fraud-pipeline`, created 2026-10-12; briefing: `../projeto-2-databricks-sagemaker.md`) runs **on top of** this platform: Spark -> Delta Lake -> MLflow -> Parquet export to S3 -> SageMaker training/endpoint. Original briefs (Portuguese) are in the parent directory: `../projeto-1-databricks-terraform-cicd.md`, `../projeto-2-databricks-sagemaker.md`.
 
 The purpose is job-interview/portfolio practice: Databricks in production, AWS architecture, Delta Lake + Unity Catalog, CI/CD, IaC.
 
@@ -101,7 +101,7 @@ NAT Gateway ~US$0.045/h, public IPv4 US$0.005/h, interface endpoints US$0.01/end
 
 1. Housekeeping (user chose to postpone it on 2026-10-12): rotate the `terraform-deployer` OAuth secret (it was pasted in a chat), revoke the GitHub token embedded in the `origin` URL and use a clean URL, deactivate the `admin-gilson` access key (only needed to re-apply `infra/ci-oidc`). Remind once, do not nag. Also AWS Budgets, before the first cluster runs.
 2. OAuth secret for `databricks-homol-pipeline` (for Project 2 bundle workflows), stored as a `homol` environment secret.
-3. **Project 2 pipeline starts next (decided 2026-10-12)**: bronze -> silver -> gold, MLflow, Databricks Workflow via Asset Bundles, then export + SageMaker. NAT is OFF by default; turn it on only when a cluster will run (Run workflow with `enable_nat`, or `-var enable_nat=true`), off afterwards.
+3. **Project 2 pipeline starts next (decided 2026-10-12)**, in `../databricks-sagemaker-fraud-pipeline` (scaffold in place, notebooks are drafts that have not run; its own `CLAUDE.md` has the details): bronze -> silver -> gold, MLflow, Databricks Workflow via Asset Bundles, then export + SageMaker. NAT is OFF by default; turn it on only when a cluster will run (Run workflow with `enable_nat`, or `-var enable_nat=true`), off afterwards.
 4. **Last 3-4 days of the trial** (about 2026-10-17 to 10-21): come back to Project 1 for prod and `destroy`. Prod environment (`main.tf`, `backend.tf`, per-env tfvars, parameterize the hardcoded `"homol"`), then enable the prod entry in the `terraform-plan.yml` matrix and write `terraform-apply-prod.yml` and `terraform-destroy-homol.yml`.
 - The trial expires about 2026-10-21; the user learns by checking AWS/Databricks consoles after each step, so tell them what to verify and where.
 - The user applies Terraform themselves (give them the commands); do not run `apply` unless asked.
