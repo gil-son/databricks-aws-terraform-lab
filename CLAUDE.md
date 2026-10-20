@@ -97,7 +97,32 @@ NAT Gateway ~US$0.045/h, public IPv4 US$0.005/h, interface endpoints US$0.01/end
 - Humans must be assigned to the workspace in the account console (Workspaces > Permissions) to log in; the service principal creator is not enough.
 - Workspace state (2026-10-08): workspace `databricks-homol` RUNNING; UC applied (`homol_catalog`, `bronze/silver/gold`, credential `databricks-homol-uc-credential`, location `databricks-homol-uc-location` on the UC bucket). Data bucket `databricks-<env>-data-<account>` (raw/, export/) + external location written on branch `feature/data-bucket` (applied). Grants applied (feature/uc-grants). Cluster policies + validation job done (`infra/modules/compute`, branch `feature/cluster-policies`). Not yet done: CI/CD, prod, Project 2 pipeline.
 
-## Next session: where to start
+## PAUSED (2026-10-20): homol was destroyed
+
+The trial was about to expire, so the user paused both projects and tore down homol. Project 2 (`../databricks-sagemaker-fraud-pipeline`) never ran its pipeline; it is paused too. The "Workspace state" lines in the decisions log and the Phase 6-10 ticks in `PROGRESS.md` describe what existed before the teardown.
+
+**Done (run locally with `AWS_PROFILE=terraform-deployer`, by the user's request):**
+- Emptied the buckets `databricks-homol-{data,uc,root}-<account-id>` with `aws s3 rm --recursive`, then `terraform destroy` in `infra/environments/homol`: everything gone (workspace, mws credentials/storage/network, Unity Catalog, SP `databricks-homol-pipeline`, cluster policies, job, notebook, IAM roles/policies, 3 buckets, VPC, subnets, SG). Homol state is now empty.
+- Verified NAT gateways, Elastic IPs and non-default VPCs: all empty. Could not verify EC2 instances/volumes (`terraform-deployer-role` lacks `ec2:DescribeInstances` / `DescribeVolumes`): the user should glance at the EC2 console.
+- Gotchas hit while destroying, for the next teardown: the buckets have no `force_destroy`, so empty them first; Unity Catalog refuses to delete the `bronze` schema, the catalog and the `databricks-homol-uc-location` external location while a managed table still exists (even after its S3 files are gone). Fix used: temporarily add `force_destroy = true` to those three resources, `plan -out` + `apply` the plan with `-target`, then `destroy`, then `git checkout` the module (no change was committed). Consider adding it permanently, or a documented teardown step, before the next destroy.
+- Auto mode blocked `terraform destroy -auto-approve` on the first try and blind applies; show a plan first and apply the saved plan.
+
+**Still existing (all about zero cost):**
+- State bucket `terraform-state-gilson-databricks-lab` (versioned, `prevent_destroy` in `infra/bootstrap/main.tf`, local state in that folder). Deleting it was blocked; to delete it, replace `prevent_destroy` with `force_destroy = true`, `apply`, then `destroy` (versions are removed too). If it is deleted, run `infra/bootstrap` again on return and `terraform init -reconfigure` in homol.
+- `infra/ci-oidc` (OIDC provider + `github-actions-terraform-{homol,prod}` roles), `terraform-cli-user`, `terraform-deployer-role` and its policies, SP `terraform-deployer` in the Databricks account (with its OAuth secret), the account's auto-created metastore, GitHub Environments and their secrets (now pointing at nothing).
+- Untracked, still empty or unfinished: `.github/workflows/terraform-apply-prod.yml`, `terraform-destroy-homol.yml`. Prod was never created.
+
+**Pending security housekeeping (postponed, remind once):** rotate/delete the `terraform-deployer` OAuth secret (it was pasted in a chat), revoke the GitHub token embedded in the `origin` URL, deactivate the `admin-gilson` access key. AWS Budgets alert was never created: do it before the next cluster.
+
+**Resume (when the user comes back):**
+1. Databricks: a new trial or paid account (check what happens to the old one). Re-create the SP `terraform-deployer` (Account admin) and its OAuth secret if the account is new. Update the git-ignored `terraform.tfvars` and the `TF_VAR_databricks_*` secrets of the GitHub Environments (the account id is part of bucket names).
+2. AWS: check that the state bucket, `ci-oidc` and the deployer role/policies still exist (recreate `bootstrap` / `ci-oidc` if they were deleted).
+3. `cd infra/environments/homol; export AWS_PROFILE=terraform-deployer; terraform init; terraform apply -var enable_nat=true` (the workspace needs the NAT to be created). Assign the human user as workspace Admin in the account console. Then `-var enable_nat=false` when idle.
+4. Upload `creditcard.csv` to `s3://databricks-homol-data-<account-id>/raw/creditcard/` (the file is not in the repo; Kaggle `mlg-ulb/creditcardfraud`).
+5. New values appear (workspace URL, cluster policy ids, SP application id): Project 2's `databricks.yml` hardcodes the host and the job policy id, update them there. Create the OAuth secret for `databricks-homol-pipeline`.
+6. Then continue with Project 2, and only afterwards prod, `apply-prod` and `destroy-homol` here.
+
+## Next session: where to start (written BEFORE the pause; superseded by "Resume" above)
 
 1. Housekeeping (user chose to postpone it on 2026-10-12): rotate the `terraform-deployer` OAuth secret (it was pasted in a chat), revoke the GitHub token embedded in the `origin` URL and use a clean URL, deactivate the `admin-gilson` access key (only needed to re-apply `infra/ci-oidc`). Remind once, do not nag. Also AWS Budgets, before the first cluster runs.
 2. OAuth secret for `databricks-homol-pipeline` (for Project 2 bundle workflows), stored as a `homol` environment secret.
